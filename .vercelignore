@@ -1,0 +1,21 @@
+# CozinhaPro — lista de proteção de deploy (Vercel)
+#
+# Achado em 05/08/2026: sem esse arquivo, o Vercel publica TUDO que está
+# nesta pasta como arquivo estático público — incluindo backups antigos do
+# app.html (código-fonte legível), o checkpoint_cozinhapro_backup_emergencia
+# (3202 lançamentos financeiros e 13 funcionários reais, sem senha nenhuma
+# pra acessar) e outros documentos internos. Confirmado ao vivo: esses
+# arquivos estavam realmente acessíveis publicamente em
+# cozinhapro.com.br/<nome-do-arquivo>.
+#
+# Estratégia: ignorar tudo por padrão, e liberar explicitamente só o que o
+# site realmente precisa. Assim, qualquer arquivo novo (backup, checkpoint,
+# rascunho) fica protegido por padrão, sem precisar lembrar de atualizar
+# esta lista toda vez.
+
+/*
+!app.html
+!login.html
+!index.html
+!vercel.json
+!api
