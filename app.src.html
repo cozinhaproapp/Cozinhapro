@@ -12187,6 +12187,23 @@ function _calcCMVReal(filtroMes) {
     return catsCMV.has(ins.categoria);
   });
 
+  // Índices O(1) por insumo (issue #25): evitam .filter() linear (sobre
+  // movsEntrada e sobre state.movimentacoes) uma vez por insumo no loop de
+  // categorias. Agrupa uma vez; consulta por insumoId.
+  const _movsEntradaPorInsumo = new Map();
+  movsEntrada.forEach(m => {
+    const k = String(m.insumoId);
+    let a = _movsEntradaPorInsumo.get(k); if (!a) { a = []; _movsEntradaPorInsumo.set(k, a); }
+    a.push(m);
+  });
+  const _entradasTodasPorInsumo = new Map(); // todas as entradas com data (sem filtro de período)
+  (state.movimentacoes||[]).forEach(m => {
+    if (m.tipo === 'saida' || !m.data) return;
+    const k = String(m.insumoId);
+    let a = _entradasTodasPorInsumo.get(k); if (!a) { a = []; _entradasTodasPorInsumo.set(k, a); }
+    a.push(m);
+  });
+
   // Buscar contagens delimitadoras consolidadas
   // Usa todos os snapshots de todas as contagensRecorrentes
   const todosSnapshots = (state.contagensRecorrentes||[])
@@ -12234,7 +12251,7 @@ function _calcCMVReal(filtroMes) {
 
     insumosCat.forEach(ins => {
       const insId = String(ins.id);
-      const movsIns = movsEntrada.filter(m => String(m.insumoId) === insId);
+      const movsIns = _movsEntradaPorInsumo.get(insId) || [];
       const totalComprasIns = movsIns.reduce((s,m) => s + (m.valorTotal||0), 0);
 
       if (ins.consumoDireto) {
@@ -12250,27 +12267,15 @@ function _calcCMVReal(filtroMes) {
       if (valInicial !== null && valFinal !== null) {
         // Real: tem contagem inicial e final
         // Compras entre as datas das contagens (pode extrapolar o mês)
-        const comprasEntreContagens = (state.movimentacoes||[])
-          .filter(m => {
-            if (m.tipo === 'saida' || !m.data) return false;
-            if (String(m.insumoId) !== insId) return false;
-            if (m.data < snapInicial.data) return false;
-            if (m.data > snapFinal.data) return false;
-            return true;
-          })
+        const comprasEntreContagens = (_entradasTodasPorInsumo.get(insId) || [])
+          .filter(m => m.data >= snapInicial.data && m.data <= snapFinal.data)
           .reduce((s,m) => s + (m.valorTotal||0), 0);
         cmvContagem += Math.max(0, valInicial + comprasEntreContagens - valFinal);
       } else if (valInicial !== null && valFinal === null) {
         // Parcial: tem só contagem inicial
         const valAtual = (ins.atual||0) * (ins.custo||0);
-        const comprasDesdeInicial = (state.movimentacoes||[])
-          .filter(m => {
-            if (m.tipo === 'saida' || !m.data) return false;
-            if (String(m.insumoId) !== insId) return false;
-            if (m.data < snapInicial.data) return false;
-            if (periodoFim && m.data > periodoFim) return false;
-            return true;
-          })
+        const comprasDesdeInicial = (_entradasTodasPorInsumo.get(insId) || [])
+          .filter(m => m.data >= snapInicial.data && (!periodoFim || m.data <= periodoFim))
           .reduce((s,m) => s + (m.valorTotal||0), 0);
         cmvContagem += Math.max(0, valInicial + comprasDesdeInicial - valAtual);
         statusCat = statusCat === 'estimado' ? 'estimado' : 'parcial';
@@ -35369,10 +35374,14 @@ function _renderConcVinculos() {
   }
   const nm = {credito:'Crédito',debito:'Débito',pix:'PIX',ifood:'iFood',aiqfome:'AiQfome',hub:'HUB',outro:'Outro'};
   const fmtR = v => (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  // Índice O(1) por id de lançamento (issue #25): evita .find() linear sobre
+  // state.lancamentos por vínculo. Map preserva === estrito; "primeiro vence".
+  const _lancPorId = new Map();
+  (state.lancamentos||[]).forEach(l => { if (!_lancPorId.has(l.id)) _lancPorId.set(l.id, l); });
   el.innerHTML = `<div style="overflow-x:auto;"><table><thead><tr>
     <th>Data Extrato</th><th>Lançamento</th><th>Valor Banco</th><th>Nº Vendas</th><th>Soma Vendas</th><th>Taxa Real</th><th>Canal</th><th></th>
   </tr></thead><tbody>${vincs.map(v=>{
-    const lanc = (state.lancamentos||[]).find(l=>l.id===v.idRealizado);
+    const lanc = _lancPorId.get(v.idRealizado);
     const qtd  = (v.idsEsperado||[]).length;
     const dataBR = lanc?.data?lanc.data.split('-').reverse().join('/'): '-';
     const tc = (v.taxaReal||0)<5?'var(--success)':(v.taxaReal||0)<15?'var(--amber)':'var(--danger)';
@@ -36633,12 +36642,27 @@ function renderFluxo() {
   // via o vínculo confirmado na Conferência de Pagamentos (Fechamento de Caixa).
   // Retorna null quando o lançamento ainda não está vinculado a nenhuma venda —
   // nesse caso ele não entra no agrupamento por forma, só no genérico por categoria+data.
+  // Índices O(1) (issue #25): evitam .find() linear por lançamento nas duas
+  // passadas de agrupamento. _vinculosVendaCanalV2() já é memoizada; o custo
+  // era o .find() sobre o array retornado (2x/lançamento) + o .find() em
+  // vendasPDV. "primeiro que casa vence" = mesma semântica do .find() anterior.
+  const _vincExtratoPorLanc = new Map();
+  _vinculosVendaCanalV2().forEach(v => {
+    if (v.confirmado && v.tipo === 'extrato') {
+      const k = String(v.lancamentoExtratoId);
+      if (!_vincExtratoPorLanc.has(k)) _vincExtratoPorLanc.set(k, v);
+    }
+  });
+  const _vendaPdvPorId = new Map();
+  (state.vendasPDV||[]).forEach(v => {
+    const k = String(v.id);
+    if (!_vendaPdvPorId.has(k)) _vendaPdvPorId.set(k, v);
+  });
   const _formaPagamentoDeLancamento = (l) => {
     if (l.tipo !== 'entrada') return null;
-    const vinc = _vinculosVendaCanalV2().find(v =>
-      v.confirmado && v.tipo === 'extrato' && String(v.lancamentoExtratoId) === String(l.id));
+    const vinc = _vincExtratoPorLanc.get(String(l.id));
     if (!vinc) return null;
-    const venda = (state.vendasPDV||[]).find(v => String(v.id) === String(vinc.vendaPdvId));
+    const venda = _vendaPdvPorId.get(String(vinc.vendaPdvId));
     const formas = venda?.formas_pagamento || [];
     if (!formas.length) return null;
     return formas.length === 1 ? formas[0] : 'Misto';
