@@ -1,0 +1,12 @@
+{
+  "name": "cozinhapro-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build de ofuscação do CozinhaPro — roda antes de cada deploy (vercel --prod). Ver build.js para detalhes.",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "javascript-obfuscator": "^5.5.0"
+  }
+}
