@@ -7312,6 +7312,15 @@ let _idsAbsorvidosCacheRef = null;
 let _idsAbsorvidosCacheVal = null;
 let _idsAbsorvidosCacheVersao = -1;
 
+// Índice memoizado vendaPdvId → vínculos[] derivado de _vinculosVendaCanalV2()
+// (issue #27). Evita o .find()/.filter() linear sobre o array de vínculos
+// (4.927 → 6.236+ registros e crescendo) feito por venda dentro de
+// _resolverFormaEletronica — gargalo real do DRE (bloco fechamentoCaixa).
+// Mesmo contador de versão (_vvcv2VersaoAtual) dos outros caches de vínculo.
+let _vpvCacheRef = null;
+let _vpvCacheVal = null;
+let _vpvCacheVersao = -1;
+
 
 
 
@@ -26486,7 +26495,7 @@ function _resolverFormaEletronica(forma) {
         .normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
       const precisaCartao = formasVenda.some(x => /cred|deb/.test(x));
       const precisaPix    = formasVenda.some(x => /pix/.test(x));
-      const vincsMista = _vinculosVendaCanalV2().filter(v => String(v.vendaPdvId) === String(venda.id) && v.confirmado);
+      const vincsMista = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).filter(v => v.confirmado);
       const temVincCartao = vincsMista.some(v => v.tipo === 'rede');
       const temVincPix    = vincsMista.some(v => v.tipo === 'extrato');
       const cartaoResolvido = !precisaCartao || temVincCartao;
@@ -26510,7 +26519,7 @@ function _resolverFormaEletronica(forma) {
     }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
-      const vinc = _vinculosVendaCanalV2().find(v => String(v.vendaPdvId) === String(venda.id) && v.confirmado);
+      const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado);
       if (vinc) {
         const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vinc.transacaoCanalId));
         liquidoConfirmado += t ? (t.liquido||0) : venda.total;
@@ -26523,7 +26532,7 @@ function _resolverFormaEletronica(forma) {
     if (!vendas.length) return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
-      const vinc = _vinculosVendaCanalV2().find(v => String(v.vendaPdvId) === String(venda.id) && v.confirmado && v.tipo === 'extrato');
+      const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado && v.tipo === 'extrato');
       if (vinc) {
         const l = (state.lancamentos||[]).find(ll => String(ll.id) === String(vinc.lancamentoExtratoId));
         liquidoConfirmado += l ? Math.abs(l.valor||0) : venda.total;
@@ -26539,7 +26548,7 @@ function _resolverFormaEletronica(forma) {
     }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
-      const vinc = _vinculosVendaCanalV2().find(v => String(v.vendaPdvId) === String(venda.id) && v.confirmado);
+      const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado);
       if (vinc) {
         const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vinc.transacaoCanalId));
         liquidoConfirmado += t ? (t.liquido||0) : venda.total;
@@ -26552,7 +26561,7 @@ function _resolverFormaEletronica(forma) {
     if (!vendas.length) return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
-      const vinc = _vinculosVendaCanalV2().find(v => String(v.vendaPdvId) === String(venda.id) && v.confirmado);
+      const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado);
       if (vinc) {
         const t = vinc.tipo === 'rede' ? (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vinc.transacaoCanalId)) : null;
         const l = vinc.tipo === 'extrato' ? (state.lancamentos||[]).find(ll => String(ll.id) === String(vinc.lancamentoExtratoId)) : null;
@@ -35102,6 +35111,27 @@ function _idsRealizadoAbsorvidosPorVinculo() {
   _idsAbsorvidosCacheVal = ids;
   _idsAbsorvidosCacheVersao = _vvcv2VersaoAtual;
   return ids;
+}
+
+// Índice vendaPdvId → vínculos[] (issue #27). Memoizado sobre o array já
+// cacheado de _vinculosVendaCanalV2(); invalidado pelo mesmo _vvcv2VersaoAtual.
+// Usado por _resolverFormaEletronica para trocar a busca linear por venda por
+// um lookup O(1). Mesmo padrão de _idsRealizadoAbsorvidosPorVinculo() acima.
+function _vinculosPorVendaPdvId() {
+  const arr = _vinculosVendaCanalV2();
+  if (_vpvCacheVersao === _vvcv2VersaoAtual && _vpvCacheRef === arr) {
+    return _vpvCacheVal;
+  }
+  const mapa = new Map();
+  arr.forEach(v => {
+    const k = String(v.vendaPdvId);
+    let a = mapa.get(k); if (!a) { a = []; mapa.set(k, a); }
+    a.push(v);
+  });
+  _vpvCacheRef = arr;
+  _vpvCacheVal = mapa;
+  _vpvCacheVersao = _vvcv2VersaoAtual;
+  return mapa;
 }
 
 // ─── Fase Compras (dual-write, ago/2026) — vínculo compra↔lançamento
