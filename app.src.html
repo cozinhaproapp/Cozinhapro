@@ -44,6 +44,12 @@
     /* Sidebar sempre escuro (não inverte com dark mode) */
     --sidebar-bg: #1C1A17;
     --sidebar-active-bg: rgba(200,131,42,0.12);
+    /* ─── MOTION & LOADING (issue #9) ─── */
+    --mx-dur-fast: 140ms;
+    --mx-dur: 240ms;
+    --mx-ease: cubic-bezier(.4, 0, .2, 1);
+    --mx-skel-base: #ECE4D6;
+    --mx-skel-shine: #F7F2E9;
   }
 
   /* ─── DARK MODE ─── */
@@ -75,6 +81,9 @@
     /* Sidebar fica levemente mais escuro no dark para separar do conteúdo */
     --sidebar-bg: #0F0E0C;
     --sidebar-active-bg: rgba(232,168,74,0.15);
+    /* Skeleton shimmer no dark (issue #9) */
+    --mx-skel-base: #2A2620;
+    --mx-skel-shine: #35302A;
   }
   /* Elementos que devem manter fundo escuro independente do tema */
   [data-theme="dark"] .pwa-banner { background: #0F0E0C !important; }
@@ -311,12 +320,62 @@
   }
 
   /* ─── PAGES ─── */
-  .page { display: none; animation: fadeIn 0.3s ease; }
+  /* Animação de entrada movida de .page para .page.mx-enter, aplicada
+     condicionalmente por MOTION.trocarPagina() conforme a frequência de uso
+     (issue #9): páginas 'alta' (ex.: fluxo) trocam instantâneas; 'ocasional'/
+     'rara' recebem mx-enter. Saída (mx-leave) fica para depois, por módulo. */
+  .page { display: none; }
   .page.active { display: block; }
+  .page.mx-enter { animation: mxPageIn var(--mx-dur) var(--mx-ease); }
+  .page.mx-leave { animation: mxPageOut var(--mx-dur-fast) var(--mx-ease); }
 
   @keyframes fadeIn {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mxPageIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes mxPageOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-4px); }
+  }
+
+  /* ─── SKELETON / SPINNER / PROGRESSO (issue #9) ─── */
+  .mx-skel {
+    background: linear-gradient(90deg, var(--mx-skel-base) 25%, var(--mx-skel-shine) 37%, var(--mx-skel-base) 63%);
+    background-size: 400% 100%;
+    animation: mxShimmer 1.2s ease-in-out infinite;
+    border-radius: 8px;
+  }
+  .mx-skel-line { height: 14px; margin: 8px 0; }
+  .mx-skel-row  { height: 38px; margin: 6px 0; }
+  .mx-skel-card { height: 96px; margin: 10px 0; }
+  @keyframes mxShimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+  /* Reutiliza @keyframes spin já existente no arquivo. */
+  .mx-spinner {
+    width: 34px; height: 34px;
+    border: 3px solid rgba(255,255,255,.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  .mx-spinner-sm {
+    width: 16px; height: 16px; border-width: 2px;
+    border-color: rgba(0,0,0,.2); border-top-color: var(--amber);
+  }
+  .mx-lazy-sentinel { height: 1px; }
+
+  /* Acessibilidade: respeita "reduzir movimento" do SO — desliga toda animação
+     nova (e o fadeIn legado). Requisito de validação das issues de módulo. */
+  @media (prefers-reduced-motion: reduce) {
+    *, .page, .page.mx-enter, .page.mx-leave, .mx-skel, .mx-spinner, .mx-spinner-sm {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
   }
 
   /* ─── FOCO ACESSÍVEL (navegação por teclado) ─── */
@@ -6988,9 +7047,14 @@ function navigate(page) {
     toast('🔒 Este módulo está disponível no plano Completo.', 'danger');
     return;
   }
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
+  // Troca de aba via MOTION (issue #9): swap síncrono + animação de ENTRADA
+  // condicionada à frequência de uso (páginas 'alta' como fluxo trocam
+  // instantâneas; ocasional/rara recebem mx-enter, salvo prefers-reduced-motion).
+  MOTION.trocarPagina(page, () => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active', 'mx-enter', 'mx-leave'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + page).classList.add('active');
+  });
   document.getElementById('page-title').textContent = pageTitles[page];
   document.querySelectorAll('.nav-item').forEach(n => {
     if (n.getAttribute('onclick') && n.getAttribute('onclick').includes("'" + page + "'")) {
@@ -9849,6 +9913,173 @@ function toast(msg, tipo = 'ok') {
   container.appendChild(t);
   setTimeout(() => { t.remove(); }, 3500);
 }
+
+// ══════════════════════════════════════════════════════════════
+// MOTION & LOADING — fundação de motion design (issue #9)
+// Camada compartilhada consumida pelas issues de módulo (#10–#23):
+// skeleton, lazy loading/paginação, progresso assíncrono e a regra de
+// frequência que decide a animação de troca de aba.
+// Único símbolo global novo é MOTION (namespaced de propósito, para não
+// colidir com nenhuma função/const já existente no arquivo — ver issue #9).
+// Todo o markup gerado usa só <div>/<span>; nunca a substring </scr'+'ipt>.
+// ══════════════════════════════════════════════════════════════
+const MOTION = {
+  // ---- frequência de uso por página (tabela da issue #9) ----
+  // 'alta' ⇒ troca instantânea (sem animação decorativa);
+  // 'ocasional'/'rara' ⇒ animação de entrada. Sub-fluxos de uso alto dentro
+  // de páginas ocasionais (contagem ativa de estoque #13; matching de
+  // conciliação #19) são tratados nas issues de módulo, não aqui.
+  FREQ: {
+    dashboard: 'ocasional', fichas: 'ocasional', precificacao: 'ocasional',
+    estoque: 'ocasional', custos: 'rara', fluxo: 'alta', dre: 'rara',
+    ifood: 'ocasional', vendas: 'ocasional', conciliacao: 'ocasional',
+    faturas: 'ocasional', equipe: 'rara', fechamento: 'ocasional', config: 'rara'
+  },
+  freqDe(page) { return MOTION.FREQ[page] || 'ocasional'; },
+  decorativa(page) { return MOTION.freqDe(page) !== 'alta'; },
+  reduzido() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (e) { return false; }
+  },
+
+  _el(x) { return typeof x === 'string' ? document.getElementById(x) : x; },
+
+  // ---- skeleton ----
+  // Placeholder enquanto renderX() popula os dados. Markup só com <div>.
+  skeleton(alvo, opts) {
+    const el = MOTION._el(alvo); if (!el) return;
+    const o = opts || {};
+    const tipo = o.tipo || 'linhas';
+    const linhas = o.linhas || 6;
+    let corpo = '';
+    for (let i = 0; i < linhas; i++) {
+      if (tipo === 'cards') {
+        corpo += '<div class="mx-skel mx-skel-card"></div>';
+      } else {
+        const largura = 60 + ((i * 7) % 35);
+        corpo += '<div class="mx-skel mx-skel-line" style="width:' + largura + '%"></div>';
+      }
+    }
+    el.innerHTML = '<div class="mx-skel-wrap" data-mx-skel="1">' + corpo + '</div>';
+  },
+  skeletonTabela(alvo, opts) {
+    const el = MOTION._el(alvo); if (!el) return;
+    const linhas = (opts && opts.linhas) || 8;
+    let corpo = '';
+    for (let i = 0; i < linhas; i++) corpo += '<div class="mx-skel mx-skel-row"></div>';
+    el.innerHTML = '<div class="mx-skel-wrap" data-mx-skel="1">' + corpo + '</div>';
+  },
+  limparSkeleton(alvo) {
+    const el = MOTION._el(alvo); if (!el) return;
+    const w = el.querySelector('[data-mx-skel]'); if (w) w.remove();
+  },
+
+  // ---- lazy loading / paginação ----
+  // Renderiza itens em lotes; carrega o próximo quando o sentinel entra no
+  // viewport. render(item, i) devolve string HTML ou um Node. Para listas de
+  // <div>/cards; listas de <tr> devem passar Nodes prontos.
+  listaPaginada(alvo, itens, opts) {
+    const el = MOTION._el(alvo); if (!el) return;
+    const o = opts || {};
+    const tam = o.pagina || 40;
+    const render = o.render;
+    if (typeof render !== 'function' || !Array.isArray(itens)) return;
+    el.innerHTML = '';
+    const holder = document.createElement('div');
+    const sentinel = document.createElement('div');
+    sentinel.className = 'mx-lazy-sentinel';
+    el.appendChild(holder);
+    el.appendChild(sentinel);
+    let i = 0;
+    let obs = null;
+    function lote() {
+      const frag = document.createDocumentFragment();
+      const fim = Math.min(i + tam, itens.length);
+      for (; i < fim; i++) {
+        const r = render(itens[i], i);
+        if (r == null) continue;
+        if (typeof r === 'string') {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = r;
+          while (tmp.firstChild) frag.appendChild(tmp.firstChild);
+        } else {
+          frag.appendChild(r);
+        }
+      }
+      holder.appendChild(frag);
+      if (i >= itens.length) { if (obs) obs.disconnect(); sentinel.remove(); }
+    }
+    if ('IntersectionObserver' in window) {
+      obs = new IntersectionObserver(function (entradas) {
+        for (let k = 0; k < entradas.length; k++) {
+          if (entradas[k].isIntersecting) { lote(); break; }
+        }
+      }, { rootMargin: '200px' });
+      obs.observe(sentinel);
+      lote();
+    } else {
+      while (i < itens.length) lote(); // fallback: sem IntersectionObserver
+    }
+  },
+
+  // ---- progresso assíncrono ----
+  // Overlay único para salvar/importar/sincronizar. Substitui os ad-hoc
+  // import-loading-spinner / nf-loading-bar (migração fica nas issues de módulo).
+  progresso: {
+    mostrar(msg) {
+      let o = document.getElementById('_mx-progresso');
+      if (!o) {
+        o = document.createElement('div');
+        o.id = '_mx-progresso';
+        o.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;'
+          + 'flex-direction:column;align-items:center;justify-content:center;gap:14px;'
+          + 'background:rgba(0,0,0,0.35);';
+        const sp = document.createElement('div');
+        sp.className = 'mx-spinner';
+        const tx = document.createElement('div');
+        tx.id = '_mx-progresso-msg';
+        tx.style.cssText = 'color:#fff;font-size:0.9rem;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.4);';
+        o.appendChild(sp); o.appendChild(tx);
+        document.body.appendChild(o);
+      }
+      const m = document.getElementById('_mx-progresso-msg');
+      if (m) m.textContent = msg || 'Carregando…';
+      o.style.display = 'flex';
+    },
+    ocultar() {
+      const o = document.getElementById('_mx-progresso');
+      if (o) o.style.display = 'none';
+    }
+  },
+  spinnerInline(msg) {
+    const s = document.createElement('span');
+    s.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+    const sp = document.createElement('span');
+    sp.className = 'mx-spinner mx-spinner-sm';
+    s.appendChild(sp);
+    if (msg) { const t = document.createElement('span'); t.textContent = msg; s.appendChild(t); }
+    return s;
+  },
+
+  // ---- troca de aba (só ENTRADA; issue #9, decisão B) ----
+  // Faz o swap síncrono via aplicarSwap() e aplica a animação de entrada
+  // apenas quando a página é decorativa (ocasional/rara) e o usuário não pediu
+  // menos movimento. Páginas 'alta' (ex.: fluxo) trocam instantâneas.
+  // SAÍDA (mx-leave) ficou para depois, habilitável por módulo. ATENÇÃO ao
+  // habilitar saída em 'config' (issue #23): existe um call site
+  // navigate('config') seguido de setTimeout(..., 100) (app.src.html ~linha 3383).
+  // Os 140ms de --mx-dur-fast de uma saída assíncrona estouram esse timeout de
+  // 100ms de forma intermitente — habilitar saída exigirá ajustar aquela chamada.
+  trocarPagina(page, aplicarSwap) {
+    if (typeof aplicarSwap === 'function') aplicarSwap();
+    const alvo = document.getElementById('page-' + page);
+    if (alvo && MOTION.decorativa(page) && !MOTION.reduzido()) {
+      alvo.classList.remove('mx-enter');
+      void alvo.offsetWidth; // reflow: reinicia a animação a cada navegação
+      alvo.classList.add('mx-enter');
+    }
+  }
+};
 
 function safeRender(fn) { try { fn(); } catch(e) { console.warn('render error:', e); } }
 
