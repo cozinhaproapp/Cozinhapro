@@ -6794,7 +6794,7 @@ const _ADMIN_PRODUTO_EMAIL = 'rodrigo.mmneves@gmail.com';
 
 
 
-const SYSTEM_VERSION = '1.07.165';
+const SYSTEM_VERSION = '1.07.166';
 
 // v1.07.137: trava de domínio — o sistema recusa rodar fora do domínio oficial
 // ou de um preview do Vercel. Não é proteção contra alguém com conhecimento
@@ -8735,6 +8735,9 @@ const grupoLabels = {
 // versão certa do arquivo — sem isso não dá pra saber, olhando o site, se
 // uma correção específica já está no ar ou não.
 const CHANGELOG = [
+  { v:'1.07.166', data:'Ago/2026', items:[
+    'Fix — balde bruto de Crédito/Débito do Fechamento de Caixa continuava aparecendo como "esperado" pendente na Conciliação Bancária mesmo depois de TODAS as vendas daquele balde já estarem vinculadas e confirmadas contra a Rede na Conferência de Pendentes (venda a venda, manual ou pareamento automático). Causa: _vendasDoFechamentoCaixa() só escondia o balde bruto quando forma.liquido (pareamento AGREGADO por dia+modalidade, campo separado) estava preenchido — nunca checava o vínculo venda a venda (vinculosVendaCanal/vinculosConciliacao), que já alimenta corretamente o "Repasse esperado" via _recalcularRepasseEsperadoRede(). Resultado prático: o mesmo dinheiro contado duas vezes no lado Esperado (uma vez como balde bruto do fechamento, outra vez dentro do repasse agregado). Auditoria no histórico completo (jan-ago/2026, 274 fechamentos): 278 baldes afetados, R$234.418,49 duplicados — 179 baldes 100% já vinculados (deixam de aparecer) e 94 parciais (passam a mostrar só a fração ainda não vinculada). Corrigido: _vendasDoFechamentoCaixa() agora também subtrai do balde bruto o valor das vendas já vinculadas contra a Rede, independente de forma.liquido. Achado e corrigido a pedido do usuário, investigando por que o dia 06/08 aparecia pendente mesmo já "conferido" no Fechamento de Caixa.',
+  ]},
   { v:'1.07.165', data:'Ago/2026', items:[
     'Fix — card "Canais de Delivery" do Painel de Vendas mostrava o nome literal "undefined undefined" numa das linhas (736 pedidos, R$95.787,18, 25,2% — dado real e correto, só o rótulo estava quebrado). Causa: o canal "online_proprio" está cadastrado em state.configPagamentos.marketplacesAtivos, então ganha grupo próprio no card (_renderVendasDePDV), mas não existia entrada correspondente em MARKETPLACE_DEFS — e a função que monta o nome do grupo (nomeCan) tinha um bug de precedência de operador (`+` antes de `||`) que fazia `undefined + " " + undefined` virar a string truthy "undefined undefined", nunca caindo no fallback que mostraria ao menos a chave crua. Corrigido em duas frentes: (1) adicionada entrada "Delivery Próprio (site/app)" em MARKETPLACE_DEFS para online_proprio; (2) nomeCan reescrita para checar explicitamente se a definição existe antes de concatenar, em vez de depender de `||` sobre uma concatenação — protege contra o mesmo bug se aparecer outro canal sem definição no futuro.',
   ]},
@@ -31251,6 +31254,21 @@ function _detectarDivergenciasFechamento(data) {
 
 function _vendasDoFechamentoCaixa() {
   const itens = [];
+  // Vendas de crédito/débito já vinculadas e confirmadas contra a Rede
+  // (Conferência de Pendentes, manual ou pareamento automático em segundo
+  // plano) — usado abaixo para não duplicar como balde bruto o que já está
+  // contabilizado num "Repasse esperado" venda a venda
+  // (_recalcularRepasseEsperadoRede). Calculado uma vez, fora do loop.
+  // Bug real encontrado a pedido do usuário (12/08/2026): o balde bruto só
+  // desaparecia quando forma.liquido (pareamento AGREGADO dia+modalidade)
+  // estava preenchido — um mecanismo totalmente separado do vínculo venda a
+  // venda. Resultado: 278 baldes (179 já 100% vinculados + 94 parciais)
+  // continuavam aparecendo como "esperado" pendente mesmo com a venda já
+  // corretamente contabilizada no Repasse Esperado — R$234.418,49 contados
+  // duas vezes no lado Esperado da Conciliação Bancária.
+  const vendasRedeVinculadas = new Set(
+    _vinculosVendaCanalV2().filter(v => v.tipo === 'rede' && v.confirmado).map(v => String(v.vendaPdvId))
+  );
   (state.fechamentosCaixa || []).forEach(f => {
     if (!f.data) return;
     // Dinheiro: usa o conferido se houver contagem, senão o esperado.
@@ -31266,7 +31284,21 @@ function _vendasDoFechamentoCaixa() {
       // líquido de verdade, na data certa do repasse. Mostrar os dois ao
       // mesmo tempo duplicava o valor (bruto aqui + líquido no repasse).
       if ((forma.id === 'credito' || forma.id === 'debito') && forma.liquido != null) return;
-      itens.push({ id: f.id + ':' + forma.id, data: f.data, valor: forma.valor, canal: forma.id, desc: '', _origem: 'fechamento', _fechamentoId: f.id });
+      // Mesmo sem o pareamento agregado, se as vendas individuais deste
+      // balde já estão vinculadas venda a venda contra a Rede, mostra só a
+      // parte ainda não vinculada (pode ser R$0 — balde some da lista — ou
+      // um resíduo, quando só parte das vendas do dia já foi confirmada).
+      let valorItem = forma.valor;
+      if (forma.id === 'credito' || forma.id === 'debito') {
+        const vendasDoBalde = forma.vendas || [];
+        if (vendasDoBalde.length) {
+          const valorJaVinculado = vendasDoBalde.reduce((s, v) =>
+            s + (vendasRedeVinculadas.has(String(v.id)) ? (v.total || 0) : 0), 0);
+          valorItem = Math.max(0, Math.round((forma.valor - valorJaVinculado) * 100) / 100);
+          if (valorItem <= 0.009) return; // 100% já vinculado — não duplica mais
+        }
+      }
+      itens.push({ id: f.id + ':' + forma.id, data: f.data, valor: valorItem, canal: forma.id, desc: '', _origem: 'fechamento', _fechamentoId: f.id });
     });
   });
   return itens;
