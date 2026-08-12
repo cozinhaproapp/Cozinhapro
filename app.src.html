@@ -6794,7 +6794,7 @@ const _ADMIN_PRODUTO_EMAIL = 'rodrigo.mmneves@gmail.com';
 
 
 
-const SYSTEM_VERSION = '1.07.164';
+const SYSTEM_VERSION = '1.07.165';
 
 // v1.07.137: trava de domínio — o sistema recusa rodar fora do domínio oficial
 // ou de um preview do Vercel. Não é proteção contra alguém com conhecimento
@@ -8175,6 +8175,15 @@ const MARKETPLACE_DEFS = [
     hint:'Plataforma cooperativa com menores taxas para restaurantes',
     keywords:['appjusto','app justo'],
   },
+  {
+    id:'online_proprio', nome:'Delivery Próprio (site/app)', emoji:'🌐',
+    cor:'#0EA5E9', rank:99,
+    share:'Canal próprio — fora dos marketplaces de terceiros',
+    usuarios:'—',
+    taxa:'0% (sem comissão de marketplace)',
+    hint:'Pedidos feitos pelo site/app próprio do estabelecimento, fora de iFood/AiQfome/etc.',
+    keywords:['online_proprio','delivery proprio','site proprio','app proprio'],
+  },
 ];
 
 const VALE_DEFS = [
@@ -8726,6 +8735,9 @@ const grupoLabels = {
 // versão certa do arquivo — sem isso não dá pra saber, olhando o site, se
 // uma correção específica já está no ar ou não.
 const CHANGELOG = [
+  { v:'1.07.165', data:'Ago/2026', items:[
+    'Fix — card "Canais de Delivery" do Painel de Vendas mostrava o nome literal "undefined undefined" numa das linhas (736 pedidos, R$95.787,18, 25,2% — dado real e correto, só o rótulo estava quebrado). Causa: o canal "online_proprio" está cadastrado em state.configPagamentos.marketplacesAtivos, então ganha grupo próprio no card (_renderVendasDePDV), mas não existia entrada correspondente em MARKETPLACE_DEFS — e a função que monta o nome do grupo (nomeCan) tinha um bug de precedência de operador (`+` antes de `||`) que fazia `undefined + " " + undefined` virar a string truthy "undefined undefined", nunca caindo no fallback que mostraria ao menos a chave crua. Corrigido em duas frentes: (1) adicionada entrada "Delivery Próprio (site/app)" em MARKETPLACE_DEFS para online_proprio; (2) nomeCan reescrita para checar explicitamente se a definição existe antes de concatenar, em vez de depender de `||` sobre uma concatenação — protege contra o mesmo bug se aparecer outro canal sem definição no futuro.',
+  ]},
   { v:'1.07.164', data:'Ago/2026', items:[
     'Fix — o aviso "Tudo vinculado" (bolinha verde + label na lista de Fechamento de Caixa) usava um cálculo próprio, separado do card Dias/Caixas Conferidos, que só contava vendas já detalhadas dentro de fm.vendas[]. Uma forma importada do PDF com dinheiro real mas ainda sem detalhamento por venda (comum logo após a importação) ficava invisível pro cálculo — "0 pendente de 0" virava "Tudo vinculado" mesmo sem nenhuma conferência real feita. Corrigido: o marcador agora reaproveita a mesma checagem por forma já validada do card KPI (nova função _fcFormaResolvida, extraída de _fcStatusConferencia sem mudar o comportamento dela). Validado contra os 189 dias de histórico: 24 dias mudam de "Tudo vinculado" pra "Vínculo parcial", revelando pendência real que estava escondida (ex.: 17/07, "outro" R$131,78 no Salão, sem vínculo nenhum) — nenhuma regressão em nenhum dia.',
   ]},
@@ -43854,7 +43866,7 @@ function _renderVendasDePDV() {
       if(!grpC[key])grpC[key]={total:0,qtd:0};
       grpC[key].total+=v.total||0; grpC[key].qtd+=1;
     });
-    const nomeCan=k=>k==='proprio'?'🛵 Delivery próprio':(mkDefs.find(m=>m.id===k)||({})).emoji+' '+(mkDefs.find(m=>m.id===k)||{}).nome||k;
+    const nomeCan=k=>{ if(k==='proprio')return '🛵 Delivery próprio'; const def=mkDefs.find(m=>m.id===k); return def?(def.emoji+' '+def.nome):k; };
     const corCan=k=>k==='proprio'?'var(--amber)':(mkDefs.find(m=>m.id===k)||{}).cor||'var(--muted)';
     const sortC=Object.entries(grpC).sort((a,b)=>b[1].total-a[1].total);
     const maxC=sortC[0]?.[1]?.total||1;
