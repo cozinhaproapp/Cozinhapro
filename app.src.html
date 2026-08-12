@@ -6794,7 +6794,7 @@ const _ADMIN_PRODUTO_EMAIL = 'rodrigo.mmneves@gmail.com';
 
 
 
-const SYSTEM_VERSION = '1.07.159';
+const SYSTEM_VERSION = '1.07.164';
 
 // v1.07.137: trava de domínio — o sistema recusa rodar fora do domínio oficial
 // ou de um preview do Vercel. Não é proteção contra alguém com conhecimento
@@ -7264,6 +7264,21 @@ function openModal(id) {
         getCatEstoque().map(c =>
           `<option value="${c.id}">${c.emoji} ${c.nome||c.id}${c.naoCMV?' (Não CMV)':''}</option>`
         ).join('');
+    }
+    // Reset do toggle "Utilidade" a cada abertura — sem isso, marcar utilidade
+    // numa vez e abrir de novo pra criar um insumo normal ficava com os campos
+    // de unidade/mínimo/categoria escondidos sem motivo.
+    const utilEl = document.getElementById('nir-utilidade');
+    if (utilEl) utilEl.checked = false;
+    toggleNirUtilidade();
+    // Pré-preenche o nome com o que já foi digitado no campo de busca da
+    // linha da compra, quando a criação parte de lá — evita ter que redigitar
+    // o mesmo nome que já foi buscado sem achar resultado.
+    const idxOrigem = window._criarInsumoParaItemIdx;
+    const nomeEl = document.getElementById('nir-nome');
+    if (nomeEl) {
+      const txtOrigem = idxOrigem ? document.getElementById(`ci-insumo-txt-${idxOrigem}`)?.value?.trim() : '';
+      nomeEl.value = txtOrigem || '';
     }
     document.getElementById('nir-nome')?.focus();
   }, 50);
@@ -8711,6 +8726,29 @@ const grupoLabels = {
 // versão certa do arquivo — sem isso não dá pra saber, olhando o site, se
 // uma correção específica já está no ar ou não.
 const CHANGELOG = [
+  { v:'1.07.164', data:'Ago/2026', items:[
+    'Fix — o aviso "Tudo vinculado" (bolinha verde + label na lista de Fechamento de Caixa) usava um cálculo próprio, separado do card Dias/Caixas Conferidos, que só contava vendas já detalhadas dentro de fm.vendas[]. Uma forma importada do PDF com dinheiro real mas ainda sem detalhamento por venda (comum logo após a importação) ficava invisível pro cálculo — "0 pendente de 0" virava "Tudo vinculado" mesmo sem nenhuma conferência real feita. Corrigido: o marcador agora reaproveita a mesma checagem por forma já validada do card KPI (nova função _fcFormaResolvida, extraída de _fcStatusConferencia sem mudar o comportamento dela). Validado contra os 189 dias de histórico: 24 dias mudam de "Tudo vinculado" pra "Vínculo parcial", revelando pendência real que estava escondida (ex.: 17/07, "outro" R$131,78 no Salão, sem vínculo nenhum) — nenhuma regressão em nenhum dia.',
+  ]},
+  { v:'1.07.163', data:'Ago/2026', items:[
+    'Novo — pendências do card Dias/Caixas Conferidos por canal específico (Crédito, Débito, PIX etc.) agora reconhecem automaticamente a parte correspondente de uma venda MISTA (ex.: Crédito + Débito) já vinculada, quando o valor da pendência bate exato com o candidato daquele canal dentro do vínculo — generalização do mecanismo que já existia só pra pendências "outro". Achado real: 09/08, "Débito" R$60,45 — a venda já estava 100% vinculada e balanceada (grupo com diferença zero), só faltava o Fechamento de Caixa reconhecer a parte específica do débito.',
+    'Novo — reconhecimento automático de pendência cujo valor exato já está contabilizado numa venda de OUTRO caixa do MESMO dia (situação rara mas real — Saipos às vezes atribui o mesmo pagamento ao total de dois caixas diferentes). Só reconhece quando a venda encontrada já tem vínculo confirmado de verdade, nunca por coincidência de valor. Achado real: 07/08, "Pago Online" R$10,00 no caixa Salão — o mesmo pagamento de uma venda de delivery já corretamente contabilizada no caixa Delivery.',
+    'Com essas duas correções, agosto/2026 fecha 8/8 dias e 16/16 caixas no card Dias/Caixas Conferidos — os dois casos que faltavam desde a v1.07.162.',
+  ]},
+  { v:'1.07.162', data:'Ago/2026', items:[
+    'Fix — Fechamento de Caixa mostrava diferença falsa (ex.: "⚠️ R$132,99 dif.") em vendas de vínculo N↔N (uma venda vinculada a vários candidatos, ou vice-versa). Causa: o cálculo somava TODOS os registros de vínculo daquela venda, inclusive cópias que apontam pra candidatos de OUTRAS vendas do mesmo grupo (assim que o vínculo N↔N é gravado, uma cópia por combinação venda×candidato). Corrigido: a diferença agora é sempre soma de vendas do grupo × soma de candidatos do grupo, nunca por venda isolada.',
+    'Novo — quando a diferença de um vínculo já foi classificada no modal de conferência de pendentes (ex.: "voucher_restaurante", "cortesia"), a lista de vendas do Fechamento de Caixa agora mostra "✅ dif. justificada" em vez do aviso vermelho de diferença — a classificação feita naquele modal passa a valer como justificativa final do vínculo.',
+    'Novo — pendências "outro" do card Dias/Caixas Conferidos (forma de pagamento não reconhecida pelo Saipos, ex.: "Pagamento não cadastrado") agora reconhecem automaticamente o caso em que esse valor é a parte de desconto/diferença de uma venda mista já vinculada e classificada (ex.: pedido pago em Crédito + voucher, onde o voucher aparece como texto não reconhecido) — sem exigir nenhuma ação manual, usando o mesmo valor de diferença já classificado no vínculo da venda.',
+  ]},
+  { v:'1.07.161', data:'Ago/2026', items:[
+    'Nova função — criar insumo do tipo "utilidade" (compra única, sem controle de estoque) direto no campo de insumo do modal "Registrar Compra" em Movimentações de Estoque, sem precisar cadastrar antes em Estoque. Insumos assim entram numa categoria "Utilidades" marcada como Não CMV (oculta da lista principal de Estoque, não entra no cálculo de CMV).',
+    'Fix — card "Dias/Caixas Conferidos" (Fechamento de Caixa) contava como pendente qualquer forma sem detalhamento de vendas, mesmo com valor R$0 — bug real: a forma "🔀 Pagamento misto" é adicionada automaticamente em toda importação, mesmo sem venda mista naquele caixa, e isso sozinho travava o card perto de zero mesmo com o vínculo eletrônico 100% feito. Corrigido: forma sem vendas E com valor zero agora conta como resolvida.',
+    'Novo — "buscar candidato" nas pendências órfãs do Fechamento de Caixa (forma com valor real e sem detalhamento de venda pra vincular automaticamente — ex.: venda de marketplace com tipo de atendimento diferente do caixa físico que a recebeu, ou texto de forma de pagamento que o sistema não reconhece). Antes disso não havia nenhum caminho de resolução pra esses casos. Agora: se já existe vínculo confirmado pra uma venda candidata (feito direto na Conferência de Pendentes), reconhece automaticamente, sem ação nenhuma; se não existe, pré-seleciona a venda candidata e abre a Conferência de Pendentes já filtrada no dia, reaproveitando o mesmo fluxo de sempre (escolher o lançamento/transação, e o mesmo modal de classificar diferença quando o valor não bate exato) em vez de duplicar interface nova.',
+  ]},
+  { v:'1.07.160', data:'Ago/2026', items:[
+    'Motion design (fundação) — skeleton loaders, transição de entrada de aba (fadeIn), suporte a prefers-reduced-motion, e um padrão único (MOTION) de skeleton/loading/progresso pra ser reaproveitado módulo por módulo daqui pra frente (issue #9).',
+    'Performance — Fluxo de Caixa, DRE e Conciliação Bancária estavam travando alguns segundos ao abrir (medido com dado real: Fluxo 3.6s, DRE 6.9s, Conciliação 1.6s). Causa: buscas lineares sem índice repetidas dentro de loop (mesma classe de bug já corrigida em 08/08 em _vinculosVendaCanalV2, reaparecendo em 4 pontos novos). Corrigido com índices O(1) (Map) em renderFluxo, _calcCMVReal e _renderConcVinculos (issue #25) — Fluxo caiu pra ~113ms, Conciliação pra ~400ms.',
+    'Performance DRE (2ª causa) — busca linear em _resolverFormaEletronica (usada pelo Fechamento de Caixa) corrigida com um índice por venda (issue #27) — DRE caiu de 6.9s pra 2.9s. Ainda sobra uma 3ª causa no DRE/Fechamento de Caixa (outro par de buscas lineares, em state.transacoesCanal/state.lancamentos), já investigada e documentada — fica pendente pra uma próxima entrega.',
+  ]},
   { v:'1.07.159', data:'Ago/2026', items:[
     'Segurança — auditoria (XSS, SQL injection, CSRF, rate limit, JWT) encontrou 4 pontos críticos/altos, corrigidos nesta entrega: (1) api/parse.js (endpoint que chama a IA da Anthropic) estava aberto pra qualquer origem sem autenticação — agora exige sessão real (JWT do Supabase Auth) antes de processar, e o CORS liberado pra "*" foi removido do vercel.json. (2) Dois pontos de XSS confirmados (descrição de extrato bancário/PIX renderizada sem escape em innerHTML) corrigidos com esc() — mais 4 achados extras do mesmo padrão encontrados numa varredura do campo l.desc/l.descricao, incluindo a tabela principal de lançamentos. (3) 11 pontos de onclick com interpolação de texto externo (fornecedor, nome de insumo) escapavam aspas simples mas não aspas duplas — corrigido; 2 deles tinham um bug pior, o escape de aspas simples era um no-op que não escapava nada.',
     'Trade-off conhecido, ainda não resolvido: como login de operador por PIN não gera JWT real (usa a anon key), operadores ficam bloqueados de usar as telas que chamam api/parse (ex.: importar Fechamento de Caixa por foto/PDF) — só login normal (admin) passa. Corrigir isso depende de dar ao fluxo de PIN uma sessão autenticada de verdade, escopo maior, fica pendente.',
@@ -16194,11 +16232,36 @@ function _insumoCasaCatFiltro(insumo, catFilt) {
   return String(insumo.categoria).toLowerCase() === String(catFilt).toLowerCase();
 }
 
+function toggleNirUtilidade() {
+  const marcado = !!document.getElementById('nir-utilidade')?.checked;
+  const campos = document.getElementById('nir-campos-normais');
+  if (campos) campos.style.display = marcado ? 'none' : '';
+}
+
+// Retorna o id da categoria "Utilidades" (Não CMV), criando-a em
+// state.catEstoque se ainda não existir. Usada pra insumo tipo "utilidade"
+// (compra única, sem controle de estoque) criado direto no campo de insumo
+// da tela Registrar Compra — não depende do usuário já ter criado essa
+// categoria manualmente em Configurações.
+function _obterOuCriarCategoriaUtilidade() {
+  if (!state.catEstoque) state.catEstoque = [];
+  let cat = getCatEstoque().find(c => c.naoCMV && (c.id === 'UTILIDADES' || (c.nome||c.id||'').trim().toLowerCase() === 'utilidades'));
+  if (!cat) {
+    cat = { id: 'UTILIDADES', emoji: '🔧', nome: 'Utilidades', naoCMV: true };
+    state.catEstoque.push(cat);
+    _invalidarCacheCatEstoque();
+  }
+  return cat.id;
+}
+
 function salvarInsumoRapido() {
-  const nome     = document.getElementById('nir-nome')?.value.trim();
-  const unidade  = document.getElementById('nir-unidade')?.value || 'un';
-  const categoria= document.getElementById('nir-categoria')?.value || '';
-  const minimo   = parseFloat(document.getElementById('nir-minimo')?.value) || 0;
+  const nome        = document.getElementById('nir-nome')?.value.trim();
+  const ehUtilidade = !!document.getElementById('nir-utilidade')?.checked;
+  // Utilidade (compra única, sem estoque): unidade/mínimo/categoria não fazem
+  // sentido pro usuário preencher — força valores neutros e categoria fixa.
+  const unidade  = ehUtilidade ? 'un' : (document.getElementById('nir-unidade')?.value || 'un');
+  const minimo   = ehUtilidade ? 0    : (parseFloat(document.getElementById('nir-minimo')?.value) || 0);
+  const categoria= ehUtilidade ? _obterOuCriarCategoriaUtilidade() : (document.getElementById('nir-categoria')?.value || '');
 
   if (!nome) { toast('⚠️ Informe o nome do insumo.', 'danger'); return; }
 
@@ -16214,6 +16277,11 @@ function salvarInsumoRapido() {
     custo: 0,  // será preenchido pela primeira compra
     valorTotal: 0,
   };
+  // Marca o tipo pra uso futuro (badges, filtros, relatórios) — a categoria
+  // Não CMV já garante hoje que fica fora do CMV, dos alertas de reposição
+  // (minimo=0) e da lista padrão de Estoque (ver renderEstoque: categorias
+  // Não CMV só aparecem com o filtro de categoria específico ativo).
+  if (ehUtilidade) novoInsumo.tipo = 'utilidade';
 
   if (!state.insumos) state.insumos = [];
   state.insumos.push(novoInsumo);
@@ -16234,6 +16302,11 @@ function salvarInsumoRapido() {
       sel.value = novoInsumo.id;
       preencherUniItem(targetIdx);
     }
+    // Reflete o nome no campo de texto visível da linha (autocomplete) —
+    // sem isso, o campo continuava mostrando só o que o usuário tinha
+    // digitado na busca, não o nome real do insumo recém-criado.
+    const txtEl = document.getElementById(`ci-insumo-txt-${targetIdx}`);
+    if (txtEl) txtEl.value = novoInsumo.nome;
     window._criarInsumoParaItemIdx = null;
   } else {
     populateMovInsumoSelect();
@@ -26713,7 +26786,12 @@ function _fcReceitaCaixa(f) {
 function _resolverFormaEletronica(forma) {
   if (forma.id === 'mistas') {
     const vendasMistas = forma.vendas || [];
-    if (!vendasMistas.length) return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    if (!vendasMistas.length) {
+      // R$0 e sem vendas = nada pra vincular (placeholder de importação,
+      // não houve venda mista naquele caixa) — não é pendência.
+      if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
+      return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendasMistas.forEach(venda => {
       // Exige vínculo específico em CADA parte que a venda mista realmente
@@ -26751,6 +26829,7 @@ function _resolverFormaEletronica(forma) {
     const vendas = forma.vendas || [];
     if (!vendas.length) {
       if (forma.liquido != null) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: forma.liquido };
+      if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
       return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
     }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
@@ -26765,7 +26844,10 @@ function _resolverFormaEletronica(forma) {
   }
   if (forma.id === 'pix') {
     const vendas = forma.vendas || [];
-    if (!vendas.length) return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    if (!vendas.length) {
+      if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
+      return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
       const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado && v.tipo === 'extrato');
@@ -26780,6 +26862,7 @@ function _resolverFormaEletronica(forma) {
     const vendas = forma.vendas || [];
     if (!vendas.length) {
       if (forma.liquido != null) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: forma.liquido };
+      if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
       return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
     }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
@@ -26794,7 +26877,10 @@ function _resolverFormaEletronica(forma) {
   }
   if (forma.id === 'online' || forma.id === 'pago_online') {
     const vendas = forma.vendas || [];
-    if (!vendas.length) return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    if (!vendas.length) {
+      if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
+      return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+    }
     let naoResolvido = 0, liquidoConfirmado = 0, resolvido = true;
     vendas.forEach(venda => {
       const vinc = (_vinculosPorVendaPdvId().get(String(venda.id)) || []).find(v => v.confirmado);
@@ -26806,12 +26892,40 @@ function _resolverFormaEletronica(forma) {
     });
     return { resolvido, naoResolvido, liquidoConfirmado };
   }
-  // Demais formas (sem mecanismo de vínculo automático ainda) — fallback no
-  // flag manual (forma.conferido).
+  // Demais formas (sem mecanismo de vínculo automático ainda, ex.: "outro")
+  // — fallback no flag manual (forma.conferido), gravado pelo botão
+  // "buscar candidato" no Fechamento de Caixa quando não acha nenhuma venda
+  // candidata (ver _fcBuscarCandidatoOrfa).
   if (forma.conferido) {
     return { resolvido: true, naoResolvido: 0, liquidoConfirmado: forma.valorFinal != null ? forma.valorFinal : forma.valor };
   }
+  if ((forma.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0, liquidoConfirmado: 0 };
   return { resolvido: false, naoResolvido: forma.valor || 0, liquidoConfirmado: 0 };
+}
+
+// Verifica se UMA forma de UM fechamento pdf_caixa/hibrido_completo já está
+// resolvida (vínculo real, R$0 fantasma, legado conferido/liquido, ou vínculo
+// órfão reconhecido) — extraído de dentro de _fcStatusConferencia pra ser
+// reaproveitado também no marcador "Tudo/Parcial/Nada vinculado" da lista de
+// Fechamentos (ver comentário lá: esse marcador tinha sua PRÓPRIA contagem,
+// que só olhava vendas já presentes em fm.vendas[] e ficava cega pra
+// dinheiro de forma sem detalhamento nenhum — exatamente o gap que esta
+// função já resolve aqui. Duas fontes de verdade divergentes pro mesmo dado
+// é como o bug apareceu: card KPI dizia "pendente", marcador dizia "tudo
+// vinculado" pro mesmo caixa recém-importado.
+function _fcFormaResolvida(f, fm) {
+  if (fm.id === 'dinheiro' || fm.id === 'voucher' || FORMAS_SEM_CONFERENCIA_EXTERNA?.has(fm.id)) {
+    return { resolvido: true, naoResolvido: 0 };
+  }
+  const vendas = fm.vendas || [];
+  if (!vendas.length) {
+    if ((fm.valor || 0) <= 0.009) return { resolvido: true, naoResolvido: 0 }; // resolvido — Fix 1
+    if (fm.conferido || fm.liquido != null) return { resolvido: true, naoResolvido: 0 }; // resolvido manual/legado
+    if (_fcOrfaVinculoExistente(f, fm)) return { resolvido: true, naoResolvido: 0 };
+    return { resolvido: false, naoResolvido: fm.valor || 0 };
+  }
+  const r = _resolverFormaEletronica(fm);
+  return { resolvido: r.resolvido, naoResolvido: r.resolvido ? 0 : r.naoResolvido };
 }
 
 function _fcStatusConferencia(f) {
@@ -26845,15 +26959,7 @@ function _fcStatusConferencia(f) {
       // Conferidos" contando 0).
       let naoResolvido = 0, semConfCount = 0;
       formas.forEach(fm => {
-        if (fm.id === 'dinheiro' || fm.id === 'voucher' || FORMAS_SEM_CONFERENCIA_EXTERNA?.has(fm.id)) return;
-        const vendas = fm.vendas || [];
-        if (!vendas.length) {
-          // Sem detalhamento de vendas (fechamento anterior a essa versão) —
-          // critério antigo, agregado.
-          if (!fm.conferido && fm.liquido == null) { semConfCount++; naoResolvido += fm.valor || 0; }
-          return;
-        }
-        const r = _resolverFormaEletronica(fm);
+        const r = _fcFormaResolvida(f, fm);
         if (!r.resolvido) { semConfCount++; naoResolvido += r.naoResolvido; }
       });
       // liquidoConfirmado é só a parte JÁ resolvida (total menos o que ainda
@@ -27514,17 +27620,29 @@ function renderFechamentos() {
       // 'fiado' puro) em vez do Set já centralizado (FORMAS_SEM_CONFERENCIA_EXTERNA)
       // — bug real, reportado: card mostrava "N pendentes" com vendas fiado que o
       // modal de Conferência de Pendentes corretamente nem listava.
-      let _vendasPendDia = 0, _totalEletronicasDia = 0;
+      //
+      // O indicador de cor/label do dia (_todosVinc/_confLabel logo abaixo)
+      // usava essa MESMA contagem por venda (_vendasPendDia/_totalEletronicasDia)
+      // como denominador — mas ela só enxerga vendas já presentes em
+      // fm.vendas[]. Bug real, reportado pelo Rodrigo: caixa recém-importado
+      // do PDF, com formas eletrônicas (ex.: Débito R$294,45) ainda sem
+      // fm.vendas detalhado, contribuía ZERO tanto pro numerador quanto pro
+      // denominador — "0 pendente de 0" dava "Tudo vinculado" mesmo sem
+      // NENHUMA conferência ter sido feita. Agora o indicador usa
+      // _fcFormaResolvida (a mesma checagem por forma do card Dias/Caixas
+      // Conferidos — R$0 fantasma, legado conferido/liquido, vínculo órfão,
+      // vínculo por venda) via _fcStatusConferencia, que já é cega a esse gap.
+      // A contagem por venda abaixo (_idsPendDia) continua só informativa,
+      // pro badge "N vendas pendentes" — quando não há detalhamento nenhum
+      // (o caso do bug), ela fica em 0 mas o indicador de cor já reflete a
+      // pendência real via valor (_naoResolvidoDia), então não volta a
+      // mostrar "tudo vinculado" incorretamente.
+      let _naoResolvidoDia = 0, _totalEletronicoDia = 0;
       fsDoDia.forEach(ff => {
+        _naoResolvidoDia += _fcStatusConferencia(ff).naoResolvido || 0;
         (ff.formas||[]).forEach(fm => {
           if (fm.id === 'dinheiro' || fm.id === 'voucher' || FORMAS_SEM_CONFERENCIA_EXTERNA.has(fm.id)) return;
-          (fm.vendas||[]).forEach(v => {
-            _totalEletronicasDia++;
-            const vincs = _vinculosVendaCanalV2().filter(vc =>
-              String(vc.vendaPdvId)===String(v.id) && vc.confirmado
-            );
-            if (!vincs.length) _vendasPendDia++;
-          });
+          _totalEletronicoDia += fm.valor || 0;
         });
       });
       // Deduplicar (vendas mistas aparecem em mistas + formas individuais)
@@ -27556,9 +27674,10 @@ function renderFechamentos() {
       // "nada conferido" só porque o dinheiro do caixa não tinha sido contado).
       // Dia sem nenhuma venda eletrônica (só dinheiro/fiado) cai em "tudo
       // vinculado" mesmo — vacuamente verdadeiro, não há nada pendente.
-      const _todosVinc = _vendasPendDia === 0;
-      const _confCor = _todosVinc ? '#1B5E20' : _vendasPendDia < _totalEletronicasDia ? '#FBC02D' : '#E53935';
-      const _confLabel = _todosVinc ? 'Tudo vinculado' : _vendasPendDia < _totalEletronicasDia ? 'Vínculo parcial' : 'Nada vinculado';
+      const _todosVinc = _naoResolvidoDia <= 0.009;
+      const _nadaVinc = _totalEletronicoDia > 0.009 && _naoResolvidoDia >= _totalEletronicoDia - 0.009;
+      const _confCor = _todosVinc ? '#1B5E20' : _nadaVinc ? '#E53935' : '#FBC02D';
+      const _confLabel = _todosVinc ? 'Tudo vinculado' : _nadaVinc ? 'Nada vinculado' : 'Vínculo parcial';
       const badgeDia = `<span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;" title="${_confLabel}">`
         + `<span style="width:8px;height:8px;border-radius:50%;background:${_confCor};flex-shrink:0;"></span>`
         + `<span style="font-size:0.65rem;color:${_confCor};font-weight:600;">${_confLabel}</span></span>`;
@@ -27701,17 +27820,20 @@ function renderFechamentos() {
           const vendasHtml = (forma.vendas||[]).map(v => {
             const vincsVenda = _vinculosVendaCanalV2().filter(vc => String(vc.vendaPdvId) === String(v.id) && vc.confirmado);
             const vinc = vincsVenda[0]; // primeiro vínculo (para ações de desvincular)
-            // Somar todos os vínculos da venda (N↔N pode ter múltiplos candidatos)
+            // Diferença calculada no nível do GRUPO N↔N (não da venda
+            // isolada) — ver _fcDiffVinculoVenda. Se já existe diferença
+            // real E ela já foi classificada no modal de "classificar
+            // diferença" (voucher_restaurante, taxa_cartao, etc.), mostra
+            // como já justificada em vez de alerta vermelho — a
+            // classificação já gerou um lançamento contábil de verdade pra
+            // essa diferença, não é mais uma pendência em aberto.
             let diffValorHtml = '';
-            if (vincsVenda.length > 0) {
-              const totalVinculado = vincsVenda.reduce((s, vc) => {
-                const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vc.transacaoCanalId));
-                const l = (state.lancamentos||[]).find(ll => String(ll.id) === String(vc.lancamentoExtratoId));
-                return s + (t ? (t.bruto||0) : l ? Math.abs(l.valor||0) : 0);
-              }, 0);
-              const diff = Math.abs(totalVinculado - (v.total||0));
-              if (diff > 0.05) {
-                diffValorHtml = `<span style="font-size:0.65rem;color:var(--danger);margin-left:4px;" title="Total vinculado (${fmtR(totalVinculado)}) difere da venda (${fmtR(v.total)})">⚠️ R$${diff.toFixed(2)} dif.</span>`;
+            const diffInfo = _fcDiffVinculoVenda(v);
+            if (diffInfo && Math.abs(diffInfo.diff) > 0.05) {
+              if (diffInfo.classifDif && diffInfo.classifDif.tipo) {
+                diffValorHtml = `<span style="font-size:0.65rem;color:var(--text-success);margin-left:4px;" title="Diferença de ${fmtR(diffInfo.diff)} já classificada e lançada">✅ dif. justificada (${diffInfo.classifDif.label || diffInfo.classifDif.tipo})</span>`;
+              } else {
+                diffValorHtml = `<span style="font-size:0.65rem;color:var(--danger);margin-left:4px;" title="Diferença de ${fmtR(diffInfo.diff)} entre o vínculo (do grupo, se N↔N) e a venda">⚠️ R$${Math.abs(diffInfo.diff).toFixed(2)} dif.</span>`;
               }
             }
             // Badge de "não atribuída" apenas se a venda NÃO está nas formas de nenhum híbrido do dia
@@ -27896,7 +28018,29 @@ function _fcBadgeProgresso(f, forma) {
     return '<span style="font-size:0.65rem;color:var(--text-muted);">conferência manual</span>';
   }
   const vendas = forma.vendas || [];
-  if (!vendas.length) return '';
+  if (!vendas.length) {
+    // Forma sem detalhamento de vendas — não tem venda individual dentro de
+    // forma.vendas pra vincular automaticamente (ver _fcBuscarCandidatoOrfa).
+    // R$0 não é pendência (placeholder de importação, ex.: "mistas" sem
+    // venda mista naquele caixa) — não mostra nada, igual antes.
+    if ((forma.valor || 0) <= 0.009) return '';
+    // Pode já existir vínculo confirmado (feito na Conferência de
+    // Pendentes) pra uma venda candidata a essa forma, mesmo sem ela estar
+    // em forma.vendas — reconhece direto, sem pedir ação nenhuma.
+    const achado = _fcOrfaVinculoExistente(f, forma);
+    if (achado) {
+      const tipoDif = achado.vinculo._classifDif?.tipo;
+      return '<span style="font-size:0.65rem;color:var(--text-success);">✅ vinculado'
+        + (tipoDif ? ' (' + tipoDif + ')' : '') + '</span>';
+    }
+    if (forma.conferido) {
+      return '<span style="font-size:0.65rem;color:var(--text-success);">✅ confirmado manualmente</span>';
+    }
+    return `<span style="font-size:0.65rem;color:var(--text-warning);">⚠️ sem venda pra vincular</span>`
+      + ` <span onclick="event.stopPropagation();_fcBuscarCandidatoOrfa('${f.id}','${forma.id}')" `
+      + `style="font-size:0.65rem;color:var(--sage);cursor:pointer;text-decoration:underline;" `
+      + `title="Buscar venda candidata do dia e completar o vínculo">buscar candidato</span>`;
+  }
   const pendentes = vendas.filter(v => {
     const vincs = _vinculosVendaCanalV2().filter(vc =>
       String(vc.vendaPdvId) === String(v.id) && vc.confirmado
@@ -27907,6 +28051,344 @@ function _fcBadgeProgresso(f, forma) {
     return '<span style="font-size:0.65rem;color:var(--text-success);">✅ conferido</span>';
   }
   return `<span style="font-size:0.65rem;color:var(--text-warning);">${pendentes} pendente${pendentes>1?'s':''}</span>`;
+}
+
+// Vendas candidatas a uma forma "órfã" (sem detalhamento em forma.vendas) —
+// busca no dia inteiro do fechamento, SEM o filtro salão/delivery que
+// _popularVendasFechamento usa pra decidir de quem "é" a venda (aqui é só
+// sugestão pro usuário confirmar, não uma atribuição definitiva). Cobre os
+// dois gaps estruturais encontrados: (1) venda de marketplace com tipo de
+// atendimento diferente do caixa físico que a recebeu (ex.: pedido iFood
+// fechado no caixa "Salão" — cenário legítimo, ver comentário em
+// _evSugerirDeliveryPorTaxa), e (2) texto de forma de pagamento que
+// _normalizarFormaPDV não reconhece (forma "outro" no PDF importado).
+function _fcCandidatosOrfa(f, forma) {
+  const dataAlvo = f.data;
+  const canal = forma.id;
+  // Vendas já usadas em QUALQUER forma de QUALQUER fechamento desse dia —
+  // não sugerir de novo uma venda que já está corretamente contabilizada
+  // em outro lugar.
+  const jaUsadas = new Set(
+    (state.fechamentosCaixa || []).filter(ff => ff.data === dataAlvo)
+      .flatMap(ff => (ff.formas || []).flatMap(fm => (fm.vendas || []).map(v => String(v.id))))
+  );
+  const CANAIS_MARKETPLACE = new Set(['mp_ifood', 'aiqfome', 'pago_online', 'online']);
+  // Normaliza as formas de pagamento de uma venda uma única vez — reaproveitado
+  // tanto por bateForma() quanto pela checagem de "candidata parcial" (vendas
+  // mistas ou parcialmente não-reconhecidas) logo abaixo.
+  const classificar = (v) => {
+    const formasPgto = (v.formas_pagamento || []).map(fp => _normalizarFormaPDV(fp));
+    let formasUnicas = [...new Set(formasPgto.filter(Boolean))];
+    if (formasUnicas.includes('voucher') && formasUnicas.length === 2) {
+      const outraForma = formasUnicas.find(fp => fp !== 'voucher');
+      if (CANAIS_MARKETPLACE.has(outraForma)) formasUnicas = [outraForma];
+    }
+    const ehMista = formasUnicas.length > 1;
+    const temReconhecida = formasPgto.some(r => r !== null);
+    const temNaoReconhecida = (v.formas_pagamento || []).length > 0 && formasPgto.some(r => r === null);
+    return { formasPgto, formasUnicas, ehMista, temReconhecida, temNaoReconhecida };
+  };
+  const bateForma = (v) => {
+    const { formasUnicas, ehMista, temNaoReconhecida } = classificar(v);
+    if (canal === 'mistas') return ehMista;
+    // Venda mista (2+ formas reconhecidas, ex.: Crédito + Débito) com o
+    // canal pendente sendo uma das partes dela — candidata; a confirmação
+    // de que essa parte específica já foi resolvida (valor batendo com o
+    // candidato certo dentro do vínculo do grupo) acontece depois, em
+    // _fcOrfaVinculoExistente (ver _fcValorGrupoPorCanal).
+    if (ehMista) return formasUnicas.includes(canal);
+    if (formasUnicas.includes(canal)) return true;
+    if (canal === 'fiado_func') return formasUnicas.includes('fiado');
+    if (canal === 'pago_online') return formasUnicas.includes('online');
+    if (canal === 'mp_ifood') return formasUnicas.includes('ifood');
+    // Forma "outro" — texto de pagamento não reconhecido por
+    // _normalizarFormaPDV (ex.: "Pagamento não cadastrado"). Dois casos:
+    // (1) venda 100% não reconhecida (nenhuma forma bateu) — candidato
+    // direto. (2) venda MISTA com uma parte reconhecida (ex.: "Crédito") e
+    // outra não ("Pagamento não cadastrado") — não conta como "mista" de
+    // verdade (a parte não reconhecida já foi descartada de formasUnicas
+    // antes de chegar aqui), mas é candidata porque o valor dessa parte
+    // não reconhecida normalmente É a diferença/desconto que já foi
+    // classificada junto com o vínculo da parte reconhecida (ver
+    // _fcOrfaVinculoExistente, que confirma isso comparando o valor).
+    if (canal === 'outro' && temNaoReconhecida) return true;
+    return false;
+  };
+  // Vendas mistas (qualquer combinação de 2+ formas reconhecidas — ex.:
+  // Crédito+Débito — ou parcialmente não-reconhecidas — canal "outro") são
+  // um caso especial: elas JÁ aparecem em jaUsadas, contadas em outra forma
+  // deste mesmo fechamento (o bucket "mistas", ou a forma da parte
+  // reconhecida) — mas isso não significa que a parte específica pedida por
+  // "canal" já foi reconhecida como pendência resolvida. Por isso, para
+  // essas vendas, ignoramos a exclusão por jaUsadas aqui; a confirmação real
+  // de que o valor bate acontece depois, em _fcOrfaVinculoExistente.
+  const ehCandidataParcial = (v) => {
+    const { formasUnicas, ehMista, temReconhecida, temNaoReconhecida } = classificar(v);
+    if (ehMista && formasUnicas.includes(canal)) return true;
+    if (canal === 'outro' && temNaoReconhecida && temReconhecida) return true;
+    return false;
+  };
+  return (state.vendasPDV || []).filter(v =>
+    v.data === dataAlvo && bateForma(v) && (ehCandidataParcial(v) || !jaUsadas.has(String(v.id)))
+  );
+}
+
+// Diferença real de um vínculo N↔N, calculada no nível do GRUPO — não da
+// venda isolada. Bug real encontrado: a lista de vendas do Fechamento de
+// Caixa somava TODOS os vínculos de uma venda (inclusive os que apontam pra
+// candidatos de OUTRAS vendas do mesmo grupo N↔N, já que _gravarVinculos
+// grava um registro por combinação venda×candidato) e comparava contra o
+// total de só essa venda — mostrando diferenças enormes e falsas em vínculos
+// perfeitamente batidos no grupo (ex.: venda de R$40 comparada contra a soma
+// de R$172,99 de DOIS candidatos do grupo, "diferença" de R$132,99 que não
+// existe). Aqui a comparação é sempre soma de vendas do grupo × soma de
+// candidatos do grupo — o resultado é o mesmo pra qualquer venda desse
+// grupo, e só sobra diferença quando ela é real. Retorna null se a venda não
+// tem vínculo confirmado nenhum.
+function _fcDiffVinculoVenda(v) {
+  const vincsVenda = _vinculosVendaCanalV2().filter(vc => String(vc.vendaPdvId) === String(v.id) && vc.confirmado);
+  if (!vincsVenda.length) return null;
+  const grupoIds = [...new Set(vincsVenda.map(vc => vc.grupoId).filter(Boolean))];
+  let somaVendasGrupo = 0, somaCandidatosGrupo = 0, classifDif = null;
+  if (grupoIds.length) {
+    const vendaIdsVistos = new Set(), candIdsVistos = new Set();
+    grupoIds.forEach(gid => {
+      _vinculosVendaCanalV2().filter(vc => vc.grupoId === gid && vc.confirmado).forEach(vc => {
+        const vId = String(vc.vendaPdvId);
+        if (!vendaIdsVistos.has(vId)) {
+          vendaIdsVistos.add(vId);
+          const vv = (state.vendasPDV||[]).find(x => String(x.id) === vId);
+          somaVendasGrupo += vv ? (vv.total||0) : 0;
+        }
+        const cKey = vc.tipo === 'rede' ? ('t:'+vc.transacaoCanalId) : ('l:'+vc.lancamentoExtratoId);
+        if (!candIdsVistos.has(cKey)) {
+          candIdsVistos.add(cKey);
+          if (vc.tipo === 'rede') {
+            const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vc.transacaoCanalId));
+            somaCandidatosGrupo += t ? (t.bruto||0) : 0;
+          } else {
+            const l = (state.lancamentos||[]).find(ll => String(ll.id) === String(vc.lancamentoExtratoId));
+            somaCandidatosGrupo += l ? Math.abs(l.valor||0) : 0;
+          }
+        }
+        if (!classifDif && vc._classifDif) classifDif = vc._classifDif;
+      });
+    });
+  } else {
+    // Vínculo legado, sem grupoId (anterior a esse campo existir) — mantém
+    // o critério antigo, por venda isolada.
+    somaVendasGrupo = v.total || 0;
+    somaCandidatosGrupo = vincsVenda.reduce((s, vc) => {
+      const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vc.transacaoCanalId));
+      const l = (state.lancamentos||[]).find(ll => String(ll.id) === String(vc.lancamentoExtratoId));
+      return s + (t ? (t.bruto||0) : l ? Math.abs(l.valor||0) : 0);
+    }, 0);
+    classifDif = (vincsVenda.find(vc => vc._classifDif) || {})._classifDif || null;
+  }
+  return { diff: +(somaVendasGrupo - somaCandidatosGrupo).toFixed(2), classifDif };
+}
+
+// Determina o "tipo" de canal (credito/debito/pix/pago_online/mp_ifood/
+// aiqfome) de um candidato de vínculo (transação Rede ou lançamento de
+// extrato) — mesma lógica de _confpDeterminarTipoCandidato (usada na tela de
+// Conferência de Pendentes), mas operando direto sobre um registro de
+// vinculosConciliacao (que já guarda transacaoCanalId/lancamentoExtratoId),
+// sem precisar do objeto intermediário {fonte,id} da seleção da tela.
+function _fcTipoCandidatoVinculo(vc) {
+  if (vc.tipo === 'rede') {
+    const t = (state.transacoesCanal||[]).find(x => String(x.id) === String(vc.transacaoCanalId));
+    if (!t) return null;
+    if (t.origemTipo === 'marketplace') return (t.modalidade||'').toLowerCase() || null;
+    const mod = (t.modalidade||'').toLowerCase();
+    return /cred/.test(mod) ? 'credito' : /deb/.test(mod) ? 'debito' : null;
+  }
+  if (vc.tipo === 'extrato') {
+    const l = (state.lancamentos||[]).find(x => String(x.id) === String(vc.lancamentoExtratoId));
+    if (!l) return null;
+    const desc = (l.desc || l.descricao || '').toLowerCase();
+    const ehMercadoPago = /c[oó]digo\s*qr\s*pix/i.test(desc) ||
+      (state.contas||[]).some(c => String(c.id) === String(l.conta) && /mercado\s*pago/i.test(c.nome||''));
+    if (ehMercadoPago) return 'pago_online';
+    if (/pix/.test(desc)) return 'pix';
+    return null;
+  }
+  return null;
+}
+
+// Soma, dentro do(s) grupo(s) de vínculo confirmado de uma venda, o valor
+// bruto de todos os candidatos cujo tipo bate com um canal específico (ex.:
+// a parte "Débito" de uma venda mista Crédito+Débito). Diferente de
+// _fcDiffVinculoVenda (que mede a diferença do GRUPO inteiro, pra achar
+// diferença real/justificada), aqui medimos só a fatia de UM canal dentro
+// do grupo — usado pra confirmar que a pendência de um canal específico do
+// Fechamento de Caixa já está coberta pela parte correspondente de uma
+// venda mista já vinculada. Retorna null se nenhum candidato do grupo bate
+// com esse canal.
+function _fcValorGrupoPorCanal(v, canal) {
+  const vincsVenda = _vinculosVendaCanalV2().filter(vc => String(vc.vendaPdvId) === String(v.id) && vc.confirmado);
+  if (!vincsVenda.length) return null;
+  const grupoIds = [...new Set(vincsVenda.map(vc => vc.grupoId).filter(Boolean))];
+  const registros = grupoIds.length
+    ? grupoIds.flatMap(gid => _vinculosVendaCanalV2().filter(vc => vc.grupoId === gid && vc.confirmado))
+    : vincsVenda;
+  const candIdsVistos = new Set();
+  let soma = 0, achouAlgum = false;
+  registros.forEach(vc => {
+    const cKey = vc.tipo === 'rede' ? ('t:'+vc.transacaoCanalId) : ('l:'+vc.lancamentoExtratoId);
+    if (candIdsVistos.has(cKey)) return;
+    candIdsVistos.add(cKey);
+    if (_fcTipoCandidatoVinculo(vc) !== canal) return;
+    achouAlgum = true;
+    if (vc.tipo === 'rede') {
+      const t = (state.transacoesCanal||[]).find(tt => String(tt.id) === String(vc.transacaoCanalId));
+      soma += t ? (t.bruto||0) : 0;
+    } else {
+      const l = (state.lancamentos||[]).find(ll => String(ll.id) === String(vc.lancamentoExtratoId));
+      soma += l ? Math.abs(l.valor||0) : 0;
+    }
+  });
+  return achouAlgum ? soma : null;
+}
+
+// Verifica se alguma venda candidata a essa forma órfã já tem vínculo
+// confirmado (feito direto na Conferência de Pendentes, sem passar pelo
+// Fechamento de Caixa) — se sim, a pendência já está resolvida de verdade,
+// só não aparecia porque a venda nunca chegou a entrar em forma.vendas.
+function _fcOrfaVinculoExistente(f, forma) {
+  const candidatos = _fcCandidatosOrfa(f, forma);
+  for (const v of candidatos) {
+    const vincs = _vinculosPorVendaPdvId().get(String(v.id)) || [];
+    const vinc = vincs.find(x => x.confirmado);
+    if (!vinc) continue;
+    // Forma "outro" (venda mista com parte não reconhecida) só conta como
+    // resolvida por ESSE vínculo se a diferença já classificada dele
+    // (venda.total − valor do candidato batido, calculada no nível do
+    // grupo N↔N — ver _fcDiffVinculoVenda) bater com o valor desta forma.
+    // É a mesma quantia apurada em dois lugares diferentes: o PDF separou
+    // como forma "outro" na importação, o vínculo já explicou a origem
+    // dela (ex.: voucher_restaurante) ao resolver a parte reconhecida da
+    // mesma venda. Sem essa checagem de valor, qualquer venda parcialmente
+    // não reconhecida do dia contaria como candidata, mesmo sem relação
+    // nenhuma com o valor pendente.
+    if (forma.id === 'outro') {
+      const diffInfo = _fcDiffVinculoVenda(v);
+      if (!diffInfo || Math.abs(Math.abs(diffInfo.diff) - (forma.valor || 0)) >= 0.05) continue;
+    } else {
+      // Venda mista num canal específico (crédito/débito/pix/...) — a
+      // pendência é só UMA parte da venda, não ela inteira. Confirma que o
+      // valor bate com a fatia desse canal dentro do vínculo do grupo (ex.:
+      // a parte "Débito" de R$60,45 dentro de um grupo Crédito+Débito que
+      // fecha perfeitamente) — só entra nessa checagem quando a venda é
+      // mesmo mista; candidatos de canal simples (1 forma só) já vêm
+      // filtrados certos por bateForma() e não precisam disso.
+      const { ehMista } = (() => {
+        const formasPgto = (v.formas_pagamento || []).map(fp => _normalizarFormaPDV(fp));
+        const formasUnicas = [...new Set(formasPgto.filter(Boolean))];
+        return { ehMista: formasUnicas.length > 1 };
+      })();
+      if (ehMista) {
+        const valorCanal = _fcValorGrupoPorCanal(v, forma.id);
+        if (valorCanal == null || Math.abs(valorCanal - (forma.valor || 0)) >= 0.05) continue;
+      }
+    }
+    return { venda: v, vinculo: vinc };
+  }
+  // Fallback: pendência cujo valor exato já está contabilizado numa venda de
+  // OUTRO caixa do MESMO dia, no mesmo canal — caso raro mas real (achado em
+  // 07/08: venda de delivery #647675500166, "Pago Online" R$10,00, já
+  // corretamente contada no caixa Delivery, mas o relatório Saipos do caixa
+  // físico do Salão também trouxe esse mesmo pagamento no total do dia —
+  // "um pedido delivery pode muito bem ter sido fechado no caixa físico do
+  // Salão"). Só reconhece se a venda encontrada já tem vínculo CONFIRMADO —
+  // dinheiro real, não só coincidência de valor — pra não mascarar um caso
+  // em que falta mesmo uma venda de verdade no sistema.
+  return _fcCandidatoCruzadoOutroCaixa(f, forma);
+}
+
+// Ver comentário no fallback de _fcOrfaVinculoExistente acima.
+function _fcCandidatoCruzadoOutroCaixa(f, forma) {
+  const outrosFechamentosMesmoDia = (state.fechamentosCaixa || [])
+    .filter(ff => ff.data === f.data && ff.id !== f.id);
+  for (const ff of outrosFechamentosMesmoDia) {
+    const fm = (ff.formas || []).find(x => x.id === forma.id);
+    if (!fm) continue;
+    for (const v of (fm.vendas || [])) {
+      if (Math.abs((v.total || 0) - (forma.valor || 0)) >= 0.05) continue;
+      const vendaCompleta = (state.vendasPDV || []).find(x => String(x.id) === String(v.id));
+      if (!vendaCompleta) continue;
+      const vincs = _vinculosPorVendaPdvId().get(String(v.id)) || [];
+      const vinc = vincs.find(x => x.confirmado);
+      if (!vinc) continue;
+      return { venda: vendaCompleta, vinculo: vinc };
+    }
+  }
+  return null;
+}
+
+// Ação do botão "buscar candidato" numa forma órfã do Fechamento de Caixa.
+// Em vez de só marcar "conferido" com um texto livre, reaproveita o MESMO
+// fluxo de vínculo com justificativa já usado na Conferência de Pendentes
+// (_confpSel + _confpConfirmarGrupo, com o modal de classificar diferença):
+// pré-seleciona a(s) venda(s) candidata(s) e abre a Conferência de
+// Pendentes já filtrada nesse dia, pra terminar escolhendo o
+// lançamento/transação correspondente do jeito de sempre. Se já existir
+// vínculo (por ex., feito antes desta função existir), reconhece na hora
+// sem pedir nada.
+function _fcBuscarCandidatoOrfa(fechamentoId, formaId) {
+  const f = (state.fechamentosCaixa || []).find(x => String(x.id) === String(fechamentoId));
+  if (!f) return;
+  const forma = (f.formas || []).find(fm => fm.id === formaId);
+  if (!forma) return;
+
+  const achado = _fcOrfaVinculoExistente(f, forma);
+  if (achado) {
+    toast('✅ Essa forma já tem vínculo confirmado (venda #' + achado.venda.id + ') — atualizando a tela.');
+    renderFechamentos();
+    return;
+  }
+
+  const candidatos = _fcCandidatosOrfa(f, forma);
+  if (!candidatos.length) {
+    const textarea = document.createElement('textarea');
+    textarea.id = 'fc-conf-manual-motivo';
+    textarea.placeholder = 'Ex.: conferido direto no relatório do Saipos/PDF, não tem venda individual pra vincular.';
+    textarea.style.cssText = 'width:100%;min-height:60px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:0.82rem;box-sizing:border-box;margin-top:8px;';
+    const nomeCaixa = f.caixa ? f.caixa.charAt(0).toUpperCase() + f.caixa.slice(1) : 'caixa';
+    customConfirm(
+      `Não encontrei nenhuma venda do dia ${_fmtDataBR(f.data) || f.data} (${nomeCaixa}) que bata com `
+      + `"${forma.label || forma.id}" — ${fmtR(forma.valor || 0)}.<br><br>`
+      + `Pode ser um fechamento antigo sem detalhamento de venda, ou a venda já foi usada em outra forma. `
+      + `Confirmar como conferido manualmente, sem vínculo de venda? Registre o motivo abaixo.`,
+      (ok) => {
+        if (!ok) return;
+        const motivo = document.getElementById('fc-conf-manual-motivo')?.value?.trim() || '';
+        forma.conferido = true;
+        forma._confirmadoManualEm = new Date().toISOString();
+        forma._confirmadoManualMotivo = motivo || 'Nenhuma venda candidata encontrada automaticamente.';
+        saveState();
+        renderFechamentos();
+        toast('✅ "' + (forma.label || forma.id) + '" confirmado manualmente (sem vínculo).');
+      },
+      textarea,
+      'Confirmar mesmo assim',
+      'btn-primary'
+    );
+    return;
+  }
+
+  // Pré-seleciona a(s) venda(s) candidata(s) — abrirConferenciaPendentes()
+  // reseta _confpSel no começo, então a seleção precisa ser aplicada DEPOIS
+  // que o modal abrir e renderizar.
+  abrirConferenciaPendentes(f.data);
+  setTimeout(() => {
+    _confpSel.vendas = candidatos.map(v => {
+      const formasVenda = (v.formas_pagamento || []).map(fp => _normalizarFormaPDV(fp)).filter(Boolean);
+      return { id: v.id, valor: v.total || 0, tipo: formasVenda.length > 1 ? 'mista' : 'cartao' };
+    });
+    _confpAtualizarBarraNN();
+    _renderConferenciaPendentes();
+    toast('👉 ' + candidatos.length + ' venda(s) candidata(s) pré-selecionada(s) — escolha o lançamento/transação correspondente e confirme o vínculo.');
+  }, 200);
 }
 
 function _fcToggleDetalhe(id) {
@@ -52207,28 +52689,41 @@ function concGenVincular(instancia) {
       Crie um insumo para registrar a compra. Produtos que não entram no estoque mas precisam ser contabilizados financeiramente podem ser criados em categorias marcadas como "Não CMV".
     </p>
 
-    <div class="grid-2">
-      <div class="form-group">
-        <label class="form-label">Nome do insumo</label>
-        <input type="text" class="form-input" id="nir-nome" placeholder="Ex: Produto de Limpeza">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Unidade</label>
-        <select class="form-input" id="nir-unidade">
-          <option value="un">Unidade (un)</option>
-          <option value="kg">Kilograma (kg)</option>
-          <option value="g">Grama (g)</option>
-          <option value="L">Litro (L)</option>
-          <option value="ml">Mililitro (ml)</option>
-          <option value="cx">Caixa (cx)</option>
-          <option value="pct">Pacote (pct)</option>
-          <option value="fd">Fardo (fd)</option>
-          <option value="m">Metro (m)</option>
-        </select>
-      </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 14px;background:var(--cream);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;cursor:pointer;">
+      <input type="checkbox" id="nir-utilidade" onchange="toggleNirUtilidade()" style="width:16px;height:16px;flex-shrink:0;margin-top:2px;">
+      <span>
+        <span style="font-size:0.82rem;font-weight:700;display:block;">🔧 Utilidade — compra única, sem controle de estoque</span>
+        <span style="font-size:0.72rem;color:var(--muted);">Ex: ferramenta, reparo, item de uso interno comprado uma vez só. Vai direto pra categoria "Utilidades" (Não CMV), sem alerta de reposição, e some da lista de Estoque — fica só no Histórico de Compras.</span>
+      </span>
+    </label>
+
+    <div class="form-group">
+      <label class="form-label">Nome do insumo</label>
+      <input type="text" class="form-input" id="nir-nome" placeholder="Ex: Produto de Limpeza">
     </div>
 
-    <div class="grid-2">
+    <div id="nir-campos-normais">
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Unidade</label>
+          <select class="form-input" id="nir-unidade">
+            <option value="un">Unidade (un)</option>
+            <option value="kg">Kilograma (kg)</option>
+            <option value="g">Grama (g)</option>
+            <option value="L">Litro (L)</option>
+            <option value="ml">Mililitro (ml)</option>
+            <option value="cx">Caixa (cx)</option>
+            <option value="pct">Pacote (pct)</option>
+            <option value="fd">Fardo (fd)</option>
+            <option value="m">Metro (m)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Qtd mínima em estoque</label>
+          <input type="number" class="form-input" id="nir-minimo" placeholder="0" min="0" step="0.001" value="0">
+        </div>
+      </div>
+
       <div class="form-group">
         <label class="form-label">Categoria</label>
         <select class="form-input" id="nir-categoria" data-ss>
@@ -52237,10 +52732,6 @@ function concGenVincular(instancia) {
         <div style="font-size:0.7rem;color:var(--muted);margin-top:4px;">
           💡 Use categorias "Não CMV" para descartáveis, limpeza etc.
         </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Qtd mínima em estoque</label>
-        <input type="number" class="form-input" id="nir-minimo" placeholder="0" min="0" step="0.001" value="0">
       </div>
     </div>
 
