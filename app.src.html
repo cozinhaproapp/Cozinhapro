@@ -2039,7 +2039,7 @@
               <span class="text-muted" style="font-size:0.82rem;">%</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--muted);margin-top:2px;">
-              <span>Ideal: 28–32%</span>
+              <span>Ideal: 28–35%</span>
               <span id="prec-cmv-label">Bom ✅</span>
             </div>
           </div>
@@ -2593,7 +2593,7 @@
       </div>
 
       <div class="alert alert-info">
-        💡 Os dados são calculados automaticamente a partir dos <strong>extratos bancários</strong> e <strong>relatórios de vendas</strong> importados. Para o CMV ideal de pães e pizzas artesanais: <strong>28–32%</strong>.
+        💡 Os dados são calculados automaticamente a partir dos <strong>extratos bancários</strong> e <strong>relatórios de vendas</strong> importados. Para o CMV ideal de pães e pizzas artesanais: <strong>28–35%</strong>.
       </div>
 
       <!-- O que é / não é CMV -->
@@ -2614,7 +2614,7 @@
                 <li>Bebidas revendidas</li>
                 <li>Insumos que vão direto ao produto</li>
               </ul>
-              <div style="margin-top:10px;font-size:0.74rem;background:#DCFCE7;border-radius:6px;padding:6px 10px;color:#166534;">Meta: manter o CMV entre <strong>28% e 32%</strong> do faturamento</div>
+              <div style="margin-top:10px;font-size:0.74rem;background:#DCFCE7;border-radius:6px;padding:6px 10px;color:#166534;">Meta: manter o CMV entre <strong>28% e 35%</strong> do faturamento</div>
             </div>
             <div style="background:#FFF7ED;border-radius:10px;padding:14px;">
               <div style="font-weight:700;font-size:0.82rem;color:#C2410C;margin-bottom:8px;">❌ Não entra no CMV</div>
@@ -6522,7 +6522,7 @@ const TOUR_STEPS = [
   // PASSO 3: PRECIFICAÇÃO
   { nav:'precificacao', alvo:'#page-precificacao .section-header', pos:'bottom', planos:['basico','completo'],
     titulo:'💰 Passo 3: Defina os preços',
-    texto:'Com o custo das fichas em mãos, defina a margem desejada e veja o preço de venda sugerido. O sistema mostra o CMV — quanto do preço vai para ingredientes (ideal: 28% a 32% na gastronomia).' },
+    texto:'Com o custo das fichas em mãos, defina a margem desejada e veja o preço de venda sugerido. O sistema mostra o CMV — quanto do preço vai para ingredientes (ideal: 28% a 35% na gastronomia).' },
 
   // MÓDULOS COMPLETO — VENDAS
   { nav:'vendas', alvo:'#page-vendas .section-header', pos:'bottom', planos:['completo'],
@@ -7946,7 +7946,7 @@ const JANELA_DIAS_TRANSFERENCIA = 3;
 // Único lugar para ajustar os cortes verde/amarelo/vermelho dos indicadores.
 // Espelha o objeto REF dos painéis de controle (Artesano). 'lo:true' = menor é melhor.
 const REF = {
-  cmv:   { lo:true,  verde:28, amarelo:32 },                 // ≤28 / 28–32 / >32
+  cmv:   { lo:true,  verde:28, amarelo:35 },                 // ≤28 / 28–35 / >35
   // escafold para os próximos indicadores (ainda não fiados na UI):
   mo:    { lo:true,  verde:25, amarelo:30, semProLabore:true },
   prime: { lo:true,  verde:50, amarelo:55, semProLabore:true },
@@ -10493,7 +10493,7 @@ const tutoriais = [
         <p style="font-size:0.9rem;line-height:1.7;margin-bottom:16px;">
           CMV é o <strong>Custo da Mercadoria Vendida</strong> — a parte do preço que vai
           para os ingredientes. Na gastronomia, um CMV saudável costuma ficar
-          entre <strong>28% e 32%</strong>.
+          entre <strong>28% e 35%</strong>.
         </p>
         <div style="background:#FFF8F0;border-left:3px solid var(--amber);padding:12px 16px;border-radius:8px;font-size:0.85rem;line-height:1.6;">
           💡 CMV de 30% significa que, de cada R$ 100 vendidos, R$ 30 foram de ingredientes.
@@ -11875,7 +11875,7 @@ function gerarDRE() {
     if (mgL < 0)  msgs.push('🔴 Resultado negativo: despesas superam a receita do período.');
     else if (mgL < 5) msgs.push('🟡 Margem muito apertada (' + mgL.toFixed(1) + '%). Revise os custos fixos.');
     else if (mgL >= 10) msgs.push('🟢 Boa margem líquida (' + mgL.toFixed(1) + '%).');
-    if (cmvStatus(cmvPct)==='vermelho') msgs.push('⚠️ CMV acima de 32% (' + cmvPct.toFixed(1) + '%). Revise fichas técnicas.');
+    if (cmvStatus(cmvPct)==='vermelho') msgs.push('⚠️ CMV acima de 35% (' + cmvPct.toFixed(1) + '%). Revise fichas técnicas.');
     if (d.salarios > 0 && d.recBruta > 0) {
       const folhaPct = (d.salarios/d.recBruta)*100;
       if (folhaPct > 35) msgs.push('🔴 Custo de mão de obra (CMO) em ' + folhaPct.toFixed(1) + '% da receita — acima do ideal. Revise escala e produtividade.');
@@ -12003,7 +12003,7 @@ function abrirGuiaDRE() {
         }).join('')
       + '</div>'
       + '<div style="padding:10px 12px;background:#EFF6FF;border-radius:8px;border:1px solid #BFDBFE;font-size:0.73rem;color:#1E3A5F;line-height:1.5;">'
-      + '<strong>💡 Benchmarks saudáveis:</strong> CMV <strong>28–32%</strong> da receita · Mão de obra <strong>28–35%</strong> · Margem líquida <strong>8–15%</strong>. Se CMV + Mão de obra + Fixos ultrapassam 85% da receita, a operação está no limite.'
+      + '<strong>💡 Benchmarks saudáveis:</strong> CMV <strong>28–35%</strong> da receita · Mão de obra <strong>28–35%</strong> · Margem líquida <strong>8–15%</strong>. Se CMV + Mão de obra + Fixos ultrapassam 85% da receita, a operação está no limite.'
       + '</div>'
 
       // Casos operacionais especiais
@@ -42749,7 +42749,7 @@ function _renderAlertasAuto() {
       if (cmvStatus(cmvReal)==='vermelho') {
         alertas.push({
           icon: '⚠️', cor: '#FFEBEE', borda: '#EF9A9A', txt: '#C62828',
-          msg: `CMV em ${cmvReal.toFixed(0)}% — acima do ideal de 32%`,
+          msg: `CMV em ${cmvReal.toFixed(0)}% — acima do ideal de 35%`,
           detalhe: 'Revise custos de insumos ou ajuste os preços',
           acao: "navigate('custos')",
           label: 'Ver análise de custos',
