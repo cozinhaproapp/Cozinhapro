@@ -2039,7 +2039,7 @@
               <span class="text-muted" style="font-size:0.82rem;">%</span>
             </div>
             <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--muted);margin-top:2px;">
-              <span>Ideal: 28–35%</span>
+              <span>Ideal: 28–32%</span>
               <span id="prec-cmv-label">Bom ✅</span>
             </div>
           </div>
@@ -2593,7 +2593,7 @@
       </div>
 
       <div class="alert alert-info">
-        💡 Os dados são calculados automaticamente a partir dos <strong>extratos bancários</strong> e <strong>relatórios de vendas</strong> importados. Para o CMV ideal de pães e pizzas artesanais: <strong>28–35%</strong>.
+        💡 Os dados são calculados automaticamente a partir dos <strong>extratos bancários</strong> e <strong>relatórios de vendas</strong> importados. Para o CMV ideal de pães e pizzas artesanais: <strong>28–32%</strong>.
       </div>
 
       <!-- O que é / não é CMV -->
@@ -2614,7 +2614,7 @@
                 <li>Bebidas revendidas</li>
                 <li>Insumos que vão direto ao produto</li>
               </ul>
-              <div style="margin-top:10px;font-size:0.74rem;background:#DCFCE7;border-radius:6px;padding:6px 10px;color:#166534;">Meta: manter o CMV entre <strong>28% e 35%</strong> do faturamento</div>
+              <div style="margin-top:10px;font-size:0.74rem;background:#DCFCE7;border-radius:6px;padding:6px 10px;color:#166534;">Meta: manter o CMV entre <strong>28% e 32%</strong> do faturamento</div>
             </div>
             <div style="background:#FFF7ED;border-radius:10px;padding:14px;">
               <div style="font-weight:700;font-size:0.82rem;color:#C2410C;margin-bottom:8px;">❌ Não entra no CMV</div>
@@ -6522,7 +6522,7 @@ const TOUR_STEPS = [
   // PASSO 3: PRECIFICAÇÃO
   { nav:'precificacao', alvo:'#page-precificacao .section-header', pos:'bottom', planos:['basico','completo'],
     titulo:'💰 Passo 3: Defina os preços',
-    texto:'Com o custo das fichas em mãos, defina a margem desejada e veja o preço de venda sugerido. O sistema mostra o CMV — quanto do preço vai para ingredientes (ideal: 28% a 35% na gastronomia).' },
+    texto:'Com o custo das fichas em mãos, defina a margem desejada e veja o preço de venda sugerido. O sistema mostra o CMV — quanto do preço vai para ingredientes (ideal: 28% a 32% na gastronomia).' },
 
   // MÓDULOS COMPLETO — VENDAS
   { nav:'vendas', alvo:'#page-vendas .section-header', pos:'bottom', planos:['completo'],
@@ -7941,6 +7941,35 @@ const JANELA_DIAS_TRANSFERENCIA = 3;
 
 
 
+
+// ═══ FAIXAS DE REFERÊNCIA DE KPI (decisão 12/10 — fonte única) ═══════════════
+// Único lugar para ajustar os cortes verde/amarelo/vermelho dos indicadores.
+// Espelha o objeto REF dos painéis de controle (Artesano). 'lo:true' = menor é melhor.
+const REF = {
+  cmv:   { lo:true,  verde:28, amarelo:32 },                 // ≤28 / 28–32 / >32
+  // escafold para os próximos indicadores (ainda não fiados na UI):
+  mo:    { lo:true,  verde:25, amarelo:30, semProLabore:true },
+  prime: { lo:true,  verde:50, amarelo:55, semProLabore:true },
+  ro:    { lo:false, verde:15, amarelo:10 },                 // ≥15 / 10–15 / <10
+  ocup:  { lo:true,  verde:7,  amarelo:7  },                 // aluguel/receita ≤7%
+  mkt:   { banda:[3,5], teto:6 },                            // 3–5 ok / <3 ou 5–6 / >6
+  util:  { lo:true,  verde:5,  amarelo:5  },                 // energia+gás+água ≤5%
+};
+const PL_MENSAL = 3560; // pró-labore mensal (p/ MO%/prime sem pró-labore — etapa futura)
+
+// Devolve 'verde' | 'amarelo' | 'vermelho' conforme a faixa do indicador k em REF.
+function faixaStatus(pct, k) {
+  const r = REF[k]; if (!r) return 'verde';
+  if (r.banda) { const [a, b] = r.banda; if (pct > r.teto) return 'vermelho'; return (pct >= a && pct <= b) ? 'verde' : 'amarelo'; }
+  if (r.lo) return pct <= r.verde ? 'verde' : pct <= r.amarelo ? 'amarelo' : 'vermelho';
+  return pct >= r.verde ? 'verde' : pct >= r.amarelo ? 'amarelo' : 'vermelho';
+}
+// Helpers de CMV — centralizam o corte 28/32; cada um mantém a paleta do seu local.
+function cmvStatus(p) { return faixaStatus(p, 'cmv'); }
+function cmvCor(p)    { return { verde:'var(--success)',      amarelo:'var(--amber)',    vermelho:'var(--danger)' }[cmvStatus(p)]; }
+function cmvCorTxt(p) { return { verde:'var(--success-text)', amarelo:'var(--warn-text)', vermelho:'var(--danger-text)' }[cmvStatus(p)]; }
+function cmvCorHex(p) { return { verde:'#2E7D32',             amarelo:'#C8832A',          vermelho:'#C62828' }[cmvStatus(p)]; }
+function cmvEmoji(p)  { return !p ? '' : { verde:'✅', amarelo:'⚠️', vermelho:'🔴' }[cmvStatus(p)]; }
 
 const DRE_CAT_MAP = {
   // Receita
@@ -10464,7 +10493,7 @@ const tutoriais = [
         <p style="font-size:0.9rem;line-height:1.7;margin-bottom:16px;">
           CMV é o <strong>Custo da Mercadoria Vendida</strong> — a parte do preço que vai
           para os ingredientes. Na gastronomia, um CMV saudável costuma ficar
-          entre <strong>28% e 35%</strong>.
+          entre <strong>28% e 32%</strong>.
         </p>
         <div style="background:#FFF8F0;border-left:3px solid var(--amber);padding:12px 16px;border-radius:8px;font-size:0.85rem;line-height:1.6;">
           💡 CMV de 30% significa que, de cada R$ 100 vendidos, R$ 30 foram de ingredientes.
@@ -11717,7 +11746,7 @@ function gerarDRE() {
   const cmvEl  = _v('dre-cmv-alerta');
   if (cmvEl) {
     cmvEl.textContent = cmvPct.toFixed(1) + '% da receita';
-    cmvEl.style.color = cmvPct > 35 ? '#C62828' : '#1D9E75';
+    cmvEl.style.color = cmvStatus(cmvPct)==='vermelho' ? '#C62828' : '#1D9E75';
   }
 
   // Detalhamento (lançamentos por grupo)
@@ -11846,7 +11875,7 @@ function gerarDRE() {
     if (mgL < 0)  msgs.push('🔴 Resultado negativo: despesas superam a receita do período.');
     else if (mgL < 5) msgs.push('🟡 Margem muito apertada (' + mgL.toFixed(1) + '%). Revise os custos fixos.');
     else if (mgL >= 10) msgs.push('🟢 Boa margem líquida (' + mgL.toFixed(1) + '%).');
-    if (cmvPct > 35) msgs.push('⚠️ CMV acima de 35% (' + cmvPct.toFixed(1) + '%). Revise fichas técnicas.');
+    if (cmvStatus(cmvPct)==='vermelho') msgs.push('⚠️ CMV acima de 32% (' + cmvPct.toFixed(1) + '%). Revise fichas técnicas.');
     if (d.salarios > 0 && d.recBruta > 0) {
       const folhaPct = (d.salarios/d.recBruta)*100;
       if (folhaPct > 35) msgs.push('🔴 Custo de mão de obra (CMO) em ' + folhaPct.toFixed(1) + '% da receita — acima do ideal. Revise escala e produtividade.');
@@ -11974,7 +12003,7 @@ function abrirGuiaDRE() {
         }).join('')
       + '</div>'
       + '<div style="padding:10px 12px;background:#EFF6FF;border-radius:8px;border:1px solid #BFDBFE;font-size:0.73rem;color:#1E3A5F;line-height:1.5;">'
-      + '<strong>💡 Benchmarks saudáveis:</strong> CMV <strong>28–35%</strong> da receita · Mão de obra <strong>28–35%</strong> · Margem líquida <strong>8–15%</strong>. Se CMV + Mão de obra + Fixos ultrapassam 85% da receita, a operação está no limite.'
+      + '<strong>💡 Benchmarks saudáveis:</strong> CMV <strong>28–32%</strong> da receita · Mão de obra <strong>28–35%</strong> · Margem líquida <strong>8–15%</strong>. Se CMV + Mão de obra + Fixos ultrapassam 85% da receita, a operação está no limite.'
       + '</div>'
 
       // Casos operacionais especiais
@@ -12360,15 +12389,16 @@ function renderCustos() {
   const circle = document.getElementById('cmv-circle');
   if (circle) {
     circle.style.strokeDashoffset = Math.max(0, offset);
-    circle.style.stroke = cmvPct<28?'#2E7D32':cmvPct<=35?'#C8832A':'#C62828';
+    circle.style.stroke = cmvCorHex(cmvPct);
   }
   const dispEl = document.getElementById('cmv-percent-display');
-  if (dispEl) { dispEl.textContent = cmvPct.toFixed(1)+'%'; dispEl.style.color = cmvPct<28?'#2E7D32':cmvPct<=35?'#C8832A':'#C62828'; }
+  if (dispEl) { dispEl.textContent = cmvPct.toFixed(1)+'%'; dispEl.style.color = cmvCorHex(cmvPct); }
   const statusEl = document.getElementById('cmv-status');
   if (statusEl && entradas>0) {
-    if      (cmvPct<28)  { statusEl.textContent='✅ Excelente'; statusEl.className='kpi-badge badge-ok'; }
-    else if (cmvPct<=35) { statusEl.textContent='⚠️ Aceitável'; statusEl.className='kpi-badge badge-warn'; }
-    else                  { statusEl.textContent='🔴 Alto';      statusEl.className='kpi-badge badge-danger'; }
+    const _cs = cmvStatus(cmvPct);
+    if      (_cs==='verde')   { statusEl.textContent='✅ Excelente'; statusEl.className='kpi-badge badge-ok'; }
+    else if (_cs==='amarelo') { statusEl.textContent='⚠️ Aceitável'; statusEl.className='kpi-badge badge-warn'; }
+    else                      { statusEl.textContent='🔴 Alto';      statusEl.className='kpi-badge badge-danger'; }
   }
 
   // ── CMV real por categoria ───────────────────────────────────
@@ -12394,7 +12424,7 @@ function renderCustos() {
 
     const setT = (id, txt, cor) => { const el = document.getElementById(id); if (el) { el.textContent = txt; if (cor) el.style.color = cor; } };
     setT('cmv-teorico-val', cmvTeorico.toFixed(1) + '%', 'var(--char)');
-    setT('cmv-real-val', cmvReal.toFixed(1) + '%', cmvReal<=35?'var(--success)':'var(--danger)');
+    setT('cmv-real-val', cmvReal.toFixed(1) + '%', cmvStatus(cmvReal)!=='vermelho'?'var(--success)':'var(--danger)');
 
     const divEl = document.getElementById('cmv-diverg-val');
     const hintEl = document.getElementById('cmv-diverg-hint');
@@ -12430,9 +12460,10 @@ function renderCustos() {
     const cat  = state.categorias?.find(c=>c.id===f.categoria);
     const cmvF = f.custoUnitario / f.precoVenda * 100;
     const mg   = 100 - cmvF;
-    const av   = cmvF<28
+    const _csF = cmvStatus(cmvF);
+    const av   = _csF==='verde'
       ? '<span class="kpi-badge badge-ok">Ótimo</span>'
-      : cmvF<=35
+      : _csF==='amarelo'
         ? '<span class="kpi-badge badge-warn">OK</span>'
         : '<span class="kpi-badge badge-danger">Revisar</span>';
     return `<tr>
@@ -12440,7 +12471,7 @@ function renderCustos() {
       <td><span class="tag">${cat?cat.emoji+' '+cat.nome:f.categoria}</span></td>
       <td class="text-mono">R$ ${f.custoUnitario.toFixed(2).replace('.',',')}</td>
       <td class="text-mono fw-bold">R$ ${f.precoVenda.toFixed(2).replace('.',',')}</td>
-      <td class="text-mono fw-bold" style="color:${cmvF<=28?'var(--success)':cmvF<=35?'var(--amber)':'var(--danger)'};">${cmvF.toFixed(1)}%</td>
+      <td class="text-mono fw-bold" style="color:${cmvCor(cmvF)};">${cmvF.toFixed(1)}%</td>
       <td class="text-mono text-success fw-bold">${mg.toFixed(1)}%</td>
       <td>${av}</td>
     </tr>`;
@@ -12711,7 +12742,7 @@ function renderPrecificacao() {
       const totalReceita = fichasComPreco.reduce((s,f)=>s+f.precoVenda, 0);
       const totalCusto   = fichasComPreco.reduce((s,f)=>s+f.custoUnitario, 0);
       const cmvMedio = totalCusto / totalReceita * 100;
-      const cor = cmvMedio<=28?'var(--success)':cmvMedio<=35?'var(--amber)':'var(--danger)';
+      const cor = cmvCor(cmvMedio);
       const melhorMargem = [...fichasComPreco].sort((a,b)=>(a.custoUnitario/a.precoVenda)-(b.custoUnitario/b.precoVenda))[0];
       const maiorCMV     = [...fichasComPreco].sort((a,b)=>(b.custoUnitario/b.precoVenda)-(a.custoUnitario/a.precoVenda))[0];
       const melhorPct    = melhorMargem ? (100 - melhorMargem.custoUnitario/melhorMargem.precoVenda*100).toFixed(1) : 0;
@@ -12855,8 +12886,8 @@ function renderPrecificacao() {
           const custoF = custoReceita * (fr.fator || 0);
           const precoF = precoPorForma[fr.nome] || 0;
           const cmvF = precoF > 0 ? custoF / precoF * 100 : null;
-          const corF = !cmvF ? 'var(--muted)' : cmvF<=28?'var(--success-text)':cmvF<=35?'var(--warn-text)':'var(--danger-text)';
-          const lblF = !cmvF ? '' : cmvF<=28?'✅':cmvF<=35?'⚠️':'🔴';
+          const corF = !cmvF ? 'var(--muted)' : cmvCorTxt(cmvF);
+          const lblF = cmvEmoji(cmvF);
           const margemF = precoF > 0 ? precoF - custoF : 0;
           return `<tr>
             <td style="padding-left:${fi===0?'12':'24'}px;">${fi===0?`<strong onclick="editarFicha(${f.id})" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Abrir ficha técnica">${esc(f.nome)}</strong> <span class="tag" style="font-size:0.58rem;background:#FFF3E0;color:#92400E;">híbrida</span><br>`:''}<span class="tag" style="font-size:0.62rem;">${esc(fr.nome)}</span></td>
@@ -12884,8 +12915,8 @@ function renderPrecificacao() {
         const custoTam = custoEfetivo(f);
         const precoTam = precoEfetivo(f);
         const cmvT = precoTam > 0 ? custoTam / precoTam * 100 : null;
-        const corT = !cmvT ? 'var(--muted)' : cmvT<=28?'var(--success-text)':cmvT<=35?'var(--warn-text)':'var(--danger-text)';
-        const lblT = !cmvT ? '' : cmvT<=28?'✅':cmvT<=35?'⚠️':'🔴';
+        const corT = !cmvT ? 'var(--muted)' : cmvCorTxt(cmvT);
+        const lblT = cmvEmoji(cmvT);
         return `<tr>
           <td><strong onclick="editarFicha(${f.id})" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Abrir ficha técnica">${esc(f.nome)}</strong></td>
           <td class="text-mono">R$ ${custoTam.toFixed(2).replace('.',',')}</td>
@@ -12906,8 +12937,8 @@ function renderPrecificacao() {
         </tr>`;
       }
       const cmvPct = f.precoVenda > 0 ? f.custoUnitario / f.precoVenda * 100 : null;
-      const corCMV = !cmvPct ? 'var(--muted)' : cmvPct<=28?'#2E7D32':cmvPct<=35?'#F59E0B':'#C62828';
-      const lblCMV = !cmvPct ? '' : cmvPct<=28?'✅':cmvPct<=35?'⚠️':'🔴';
+      const corCMV = !cmvPct ? 'var(--muted)' : cmvCorHex(cmvPct);
+      const lblCMV = cmvEmoji(cmvPct);
       return `<tr>
         <td><strong onclick="editarFicha(${f.id})" style="cursor:pointer;border-bottom:1px dotted var(--muted);" title="Abrir ficha técnica">${esc(f.nome)}</strong>${f.isPizza?` <span class="tag" style="font-size:0.6rem;">${esc(f.tamanho)}</span>`:''}</td>
         <td class="text-mono">R$ ${f.custoUnitario.toFixed(2).replace('.',',')}</td>
@@ -12967,8 +12998,8 @@ function renderPrecificacao() {
       const custo = ins.custo || 0;
       const preco = precosRev[String(ins.id)] || 0;
       const cmv = preco > 0 ? custo / preco * 100 : null;
-      const cor = !cmv ? 'var(--muted)' : cmv<=28 ? '#2E7D32' : cmv<=35 ? '#F59E0B' : '#C62828';
-      const lbl = !cmv ? '' : cmv<=28 ? '✅' : cmv<=35 ? '⚠️' : '🔴';
+      const cor = !cmv ? 'var(--muted)' : cmvCorHex(cmv);
+      const lbl = cmvEmoji(cmv);
       const pSug = cmvAlvoRev > 0 ? 'R$ ' + (custo/(cmvAlvoRev/100)).toFixed(2).replace('.',',') : '—';
       const pMP  = taxaMPRev > 0 && cmvAlvoRev > 0 ? 'R$ ' + (custo/((cmvAlvoRev/100)*(1-taxaMPRev/100))).toFixed(2).replace('.',',') : '—';
       return '<tr><td><strong>' + esc(ins.nome) + '</strong></td>'
@@ -13042,7 +13073,7 @@ function _renderPrecCombos() {
     const cmvMax = c.preco > 0 ? (r.max / c.preco * 100) : null;
     const cmvTxt = cmvMin == null ? '—' : temFaixa ? cmvMin.toFixed(1) + '–' + cmvMax.toFixed(1) + '%' : cmvMin.toFixed(1) + '%';
     const margemTxt = cmvMax == null ? '—' : temFaixa ? (100-cmvMax).toFixed(1) + '–' + (100-cmvMin).toFixed(1) + '%' : (100-cmvMin).toFixed(1) + '%';
-    const corCMV = cmvMax != null ? (cmvMax <= 35 ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
+    const corCMV = cmvMax != null ? (cmvStatus(cmvMax)!=='vermelho' ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
     return '<tr style="border-bottom:1px solid var(--border);">'
       + '<td style="padding:8px 10px;font-weight:600;">' + (c.emoji || '🎁') + ' ' + esc(c.nome) + '</td>'
       + '<td style="padding:8px 10px;font-family:var(--mono);font-size:0.78rem;">' + custoTxt + '</td>'
@@ -42715,10 +42746,10 @@ function _renderAlertasAuto() {
     const cmvLanc = lancMes.filter(l=>l.tipo==='saida'&&['insumos','embalagem'].includes(l.categoria)).reduce((s,l)=>s+(l.valor||0),0);
     if (receita > 0) {
       const cmvReal = cmvLanc / receita * 100;
-      if (cmvReal > 35) {
+      if (cmvStatus(cmvReal)==='vermelho') {
         alertas.push({
           icon: '⚠️', cor: '#FFEBEE', borda: '#EF9A9A', txt: '#C62828',
-          msg: `CMV em ${cmvReal.toFixed(0)}% — acima do ideal de 35%`,
+          msg: `CMV em ${cmvReal.toFixed(0)}% — acima do ideal de 32%`,
           detalhe: 'Revise custos de insumos ou ajuste os preços',
           acao: "navigate('custos')",
           label: 'Ver análise de custos',
@@ -43050,8 +43081,8 @@ function renderDashboard() {
       dashCmvEl.textContent = receitaMes > 0 ? cmvPctDash.toFixed(1) + '%' : '\u2014';
       if (dashCmvBadgeEl) {
         if (receitaMes <= 0) { dashCmvBadgeEl.textContent = '\u2014'; dashCmvBadgeEl.className = 'kpi-badge'; }
-        else if (cmvPctDash < 28) { dashCmvBadgeEl.textContent = '\u2705 Bom'; dashCmvBadgeEl.className = 'kpi-badge badge-ok'; }
-        else if (cmvPctDash <= 35) { dashCmvBadgeEl.textContent = '\u26a0\ufe0f Aten\u00e7\u00e3o'; dashCmvBadgeEl.className = 'kpi-badge badge-warn'; }
+        else if (cmvStatus(cmvPctDash)==='verde') { dashCmvBadgeEl.textContent = '\u2705 Bom'; dashCmvBadgeEl.className = 'kpi-badge badge-ok'; }
+        else if (cmvStatus(cmvPctDash)==='amarelo') { dashCmvBadgeEl.textContent = '\u26a0\ufe0f Aten\u00e7\u00e3o'; dashCmvBadgeEl.className = 'kpi-badge badge-warn'; }
         else { dashCmvBadgeEl.textContent = '\ud83d\udd34 Alto'; dashCmvBadgeEl.className = 'kpi-badge badge-danger'; }
       }
     }
@@ -53579,7 +53610,7 @@ function editarComboCrud(id) {
   const cmvMax = c.preco > 0 ? (custoRange.max / c.preco * 100) : null;
   const cmvTxt = cmvMin == null ? '—' : temFaixa ? cmvMin.toFixed(1) + '% – ' + cmvMax.toFixed(1) + '%' : cmvMin.toFixed(1) + '%';
   const margemTxt = cmvMax == null ? '—' : temFaixa ? (100-cmvMax).toFixed(1) + '% – ' + (100-cmvMin).toFixed(1) + '%' : (100-cmvMin).toFixed(1) + '%';
-  const corCMV = cmvMax != null && cmvMax <= 35 ? 'var(--success)' : 'var(--danger)';
+  const corCMV = cmvMax != null && cmvStatus(cmvMax)!=='vermelho' ? 'var(--success)' : 'var(--danger)';
 
   editor.innerHTML = '<div style="display:flex;flex-direction:column;gap:12px;">'
     + '<div class="grid-2">'
@@ -53803,7 +53834,7 @@ function _comboRefreshKPIs(id) {
   const cmvMax = c.preco > 0 ? (r.max / c.preco * 100) : null;
   const cmvTxt = cmvMin == null ? '—' : temFaixa ? cmvMin.toFixed(1) + '% – ' + cmvMax.toFixed(1) + '%' : cmvMin.toFixed(1) + '%';
   const margemTxt = cmvMax == null ? '—' : temFaixa ? (100-cmvMax).toFixed(1) + '% – ' + (100-cmvMin).toFixed(1) + '%' : (100-cmvMin).toFixed(1) + '%';
-  const corCMV = cmvMax != null && cmvMax <= 35 ? 'var(--success)' : 'var(--danger)';
+  const corCMV = cmvMax != null && cmvStatus(cmvMax)!=='vermelho' ? 'var(--success)' : 'var(--danger)';
   const custoEl = document.getElementById('combo-custo-' + id);
   const cmvEl   = document.getElementById('combo-cmv-' + id);
   const margemEl= document.getElementById('combo-margem-' + id);
