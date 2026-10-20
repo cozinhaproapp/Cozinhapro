@@ -19853,8 +19853,9 @@ function renderExecucaoContagem(sessao, rec) {
                               const mostrarConversao = preenchido && varSelecionada;
                               return `<div style="display:flex;flex-direction:column;gap:5px;">
                                 <div style="display:flex;gap:4px;align-items:center;">
-                                  <input type="number" value="${valDigitado}" min="0" step="0.001" id="cnt-input-${areaIdx}-${ins.id}"
+                                  <input type="text" inputmode="decimal" value="${valDigitado}" id="cnt-input-${areaIdx}-${ins.id}"
                                     onchange="atualizarItemContagem('${sessao.id}',${areaIdx},'${ins.id}',this.value,'${(varSelecionada||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"
+                                    onkeydown="_cntEnterNav(event,${areaIdx})"
                                     ${bloqueado?'disabled':''}
                                     style="width:80px;padding:5px 8px;border:1px solid ${preenchido?'var(--amber)':'var(--border)'};
                                       border-radius:6px;font-family:'DM Mono',monospace;font-size:0.82rem;text-align:right;
@@ -19868,8 +19869,9 @@ function renderExecucaoContagem(sessao, rec) {
                               </div>`;
                             })()
                           : `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-                              <input type="number" value="${val}" min="0" step="0.001" id="cnt-input-${areaIdx}-${ins.id}"
+                              <input type="text" inputmode="decimal" value="${val}" id="cnt-input-${areaIdx}-${ins.id}"
                                 onchange="atualizarItemContagem('${sessao.id}',${areaIdx},'${ins.id}',this.value,'')"
+                                onkeydown="_cntEnterNav(event,${areaIdx})"
                                 style="width:80px;padding:5px 8px;border:1px solid ${preenchido?'var(--amber)':'var(--border)'};
                                   border-radius:6px;font-family:'DM Mono',monospace;font-size:0.82rem;text-align:right;
                                 background:${preenchido?'#FFF8F0':'white'};"
@@ -19882,6 +19884,10 @@ function renderExecucaoContagem(sessao, rec) {
                 </tbody>
               </table>
             </div>`}
+        ${(!area.concluida && insumosGrupo.length) ? `
+        <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+          <button id="cnt-concluir-btn-${areaIdx}" onclick="concluirArea(${areaIdx})" class="btn btn-primary" style="font-size:0.85rem;">✅ Concluir área</button>
+        </div>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -19921,7 +19927,7 @@ function atualizarItemContagem(sessaoId, areaIdx, insumoId, val, varianteSel) {
   if (!sessao) return;
   if (!sessao.areas[areaIdx].itens) sessao.areas[areaIdx].itens={};
 
-  let qtd = parseFloat(val)||0;
+  let qtd = parseFloat(String(val).replace(',', '.'))||0;
 
   // Se variante selecionada, converter para unidade principal
   if (varianteSel && varianteSel !== '') {
@@ -20076,6 +20082,28 @@ function reabrirArea(areaIdx) {
 function scrollToArea(id) {
   const el = document.getElementById(id);
   if (el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// Enter avança para o próximo campo de quantidade da mesma área; no último,
+// foca o botão "Concluir área" (fluxo de digitação sem mouse/scroll).
+function _cntEnterNav(e, areaIdx) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const body = document.getElementById('cnt-area-body-' + areaIdx);
+  if (!body) return;
+  const inputs = Array.prototype.slice.call(
+    body.querySelectorAll('input[id^="cnt-input-' + areaIdx + '-"]')
+  ).filter(function(el){ return !el.disabled; });
+  const i = inputs.indexOf(e.target);
+  if (i > -1 && i < inputs.length - 1) {
+    const next = inputs[i + 1];
+    next.focus();
+    if (next.select) next.select();
+  } else {
+    e.target.blur(); // garante o commit (onchange) do último campo
+    const btn = document.getElementById('cnt-concluir-btn-' + areaIdx);
+    if (btn) { btn.focus(); btn.scrollIntoView({ behavior:'smooth', block:'center' }); }
+  }
 }
 
 function renderResultadoContagem(sessao) {
@@ -20423,21 +20451,53 @@ function _abrirModalAplicarContagem(sessao) {
       + '</div>'
     : '';
 
+  // Insumos contados em mais de um grupo — antes era um 2º modal; agora é uma
+  // seção dentro deste (janela única no final da contagem).
+  const _porInsumo = {};
+  sessao.areas.forEach(function(area) {
+    const grp = (state.gruposInsumos||[]).find(function(g){ return g.id===area.grupoId; });
+    const nomeArea = grp ? grp.nome : (area.grupoId||'Grupo');
+    Object.entries(area.itens||{}).forEach(function(entry) {
+      const insumoId = entry[0];
+      if (!_porInsumo[insumoId]) _porInsumo[insumoId] = [];
+      _porInsumo[insumoId].push({ nomeArea: nomeArea, qtd: parseFloat(entry[1])||0 });
+    });
+  });
+  const _dups = Object.entries(_porInsumo).filter(function(e){ return e[1].length > 1; });
+  const dupHtml = _dups.length
+    ? '<div style="margin:12px 0;padding:10px 12px;background:var(--cream);border:1px solid var(--border);border-radius:8px;">'
+      + '<div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">⚠️ Insumos contados em mais de um grupo (serão somados)</div>'
+      + _dups.map(function(e) {
+          const insumoId = e[0], areas = e[1];
+          const ins = (state.insumos||[]).find(function(i){ return String(i.id)===String(insumoId); });
+          const nome = ins ? ins.nome : ('Insumo #'+insumoId);
+          const total = areas.reduce(function(s,a){ return s+a.qtd; }, 0);
+          const detalhes = areas.map(function(a){ return a.nomeArea+': '+a.qtd+' '+((ins&&ins.unidade)||''); }).join(' + ');
+          return '<div style="font-size:0.74rem;margin-bottom:4px;"><strong>'+nome+'</strong> — '+detalhes+' = <span style="color:var(--amber);font-weight:700;">'+total+' '+((ins&&ins.unidade)||'')+'</span></div>';
+        }).join('')
+      + '</div>'
+    : '';
+
   const modalEl = document.createElement('div');
   modalEl.id = 'modal-aplicar-contagem';
   modalEl.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
   modalEl.innerHTML =
-    '<div style="background:white;border-radius:14px;padding:24px;max-width:460px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);">'
+    '<div style="background:white;border-radius:14px;max-width:460px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.2);overflow:hidden;">'
+    + '<div style="padding:24px 24px 0 24px;">'
     + '<div style="font-size:1.1rem;font-weight:700;margin-bottom:8px;">✅ Contagem concluída!</div>'
-    + '<div style="font-size:0.82rem;color:var(--muted);margin-bottom:4px;">'
+    + '<div style="font-size:0.82rem;color:var(--muted);">'
     + nAreas + ' área(s) · ' + nInsumos + ' insumo(s) contado(s)</div>'
-    + alertasHtml
-    + '<p style="font-size:0.8rem;color:var(--muted);margin:12px 0;line-height:1.5;">'
+    + '</div>'
+    + '<div style="padding:8px 24px 12px 24px;overflow-y:auto;flex:1;">'
+    + alertasHtml + dupHtml
+    + '<p style="font-size:0.8rem;color:var(--muted);margin:12px 0 0 0;line-height:1.5;">'
     + 'As quantidades contadas serão aplicadas ao estoque, substituindo os valores anteriores.</p>'
-    + '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">'
+    + '</div>'
+    + '<div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;background:white;">'
     + '<button onclick="_fecharModalAplicar()" class="btn btn-outline" style="font-size:0.82rem;">← Voltar e editar</button>'
     + '<button onclick="_fecharModalAplicar();aplicarContagemFinal();" class="btn btn-primary" style="font-size:0.82rem;">📦 Aplicar ao Estoque</button>'
-    + '</div></div>';
+    + '</div>'
+    + '</div>';
   document.body.appendChild(modalEl);
   modalEl.onclick = function(e) { if (e.target===modalEl) modalEl.remove(); };
 }
@@ -20522,59 +20582,10 @@ function _analisarVariacoesContagem(sessao) {
 function aplicarContagemFinal() {
   const sessao = (state.contagensAtivas||[]).find(s=>s.id===contagemAtivaId);
   if (!sessao) return;
-
-  // Detecta insumos que aparecem em mais de uma área (grupo)
-  const porInsumo = {};
-  sessao.areas.forEach(area => {
-    const grp = (state.gruposInsumos||[]).find(g=>g.id===area.grupoId);
-    const nomeArea = grp ? grp.nome : (area.grupoId||'Grupo');
-    Object.entries(area.itens||{}).forEach(([insumoId, qtd]) => {
-      if (!porInsumo[insumoId]) porInsumo[insumoId] = [];
-      porInsumo[insumoId].push({ nomeArea, qtd: parseFloat(qtd)||0 });
-    });
-  });
-
-  const duplicatas = Object.entries(porInsumo).filter(([,areas]) => areas.length > 1);
-
-  if (duplicatas.length > 0) {
-    const linhas = duplicatas.map(([insumoId, areas]) => {
-      const ins = (state.insumos||[]).find(i=>String(i.id)===String(insumoId));
-      const nome = ins?.nome || 'Insumo #'+insumoId;
-      const total = areas.reduce((s,a)=>s+a.qtd, 0);
-      const detalhes = areas.map(a=>`${a.nomeArea}: ${a.qtd} ${ins?.unidade||''}`).join(' + ');
-      return `<div style="padding:8px 10px;background:var(--cream);border-radius:7px;border:1px solid var(--border);margin-bottom:6px;">
-        <div style="font-weight:700;font-size:0.82rem;">${nome}</div>
-        <div style="font-size:0.75rem;color:var(--muted);margin:2px 0;">${detalhes}</div>
-        <div style="font-size:0.8rem;color:var(--amber);font-weight:700;">Total a aplicar: ${total} ${ins?.unidade||''}</div>
-      </div>`;
-    }).join('');
-
-    const modalEl = document.createElement('div');
-    modalEl.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;';
-    modalEl.innerHTML = `
-      <div style="background:white;border-radius:14px;padding:24px;max-width:460px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);">
-        <div style="font-size:1rem;font-weight:700;margin-bottom:6px;">⚠️ Insumos em múltiplos grupos</div>
-        <p style="font-size:0.78rem;color:var(--muted);margin-bottom:14px;line-height:1.5;">
-          Os insumos abaixo foram contados em mais de um grupo.<br>
-          Os valores serão <strong>somados</strong> ao aplicar — confirme se está correto.
-        </p>
-        <div style="margin-bottom:16px;">${linhas}</div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;">
-          <button id="dup-cancelar" class="btn btn-outline" style="font-size:0.82rem;">Revisar contagem</button>
-          <button id="dup-confirmar" class="btn btn-primary" style="font-size:0.82rem;">✅ Confirmar e aplicar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modalEl);
-    document.getElementById('dup-cancelar').onclick = () => modalEl.remove();
-    document.getElementById('dup-confirmar').onclick = () => { modalEl.remove(); _aplicarContagemConfirmada(sessao); };
-    modalEl.onclick = e => { if (e.target===modalEl) modalEl.remove(); };
-    return;
-  }
-
-  customConfirm('Aplicar contagem ao estoque?\n\nAs quantidades serão substituídas pelas contadas.', ok => {
-    if (!ok) return;
-    _aplicarContagemConfirmada(sessao);
-  });
+  // O resumo, as variações e os insumos contados em múltiplos grupos já foram
+  // mostrados e confirmados no modal "Contagem concluída"
+  // (_abrirModalAplicarContagem) — agora a única janela do final. Aplica direto.
+  _aplicarContagemConfirmada(sessao);
 }
 
 function _aplicarContagemConfirmada(sessao) {
