@@ -3173,6 +3173,26 @@
               <span class="text-mono fw-bold" id="dre-ind-fixos">0%</span>
             </div>
             <div class="dre-row">
+              <span class="text-muted">Mão de Obra %</span>
+              <span class="text-mono fw-bold" id="dre-ind-mo">0%</span>
+            </div>
+            <div class="dre-row">
+              <span class="text-muted">Prime Cost %</span>
+              <span class="text-mono fw-bold" id="dre-ind-prime">0%</span>
+            </div>
+            <div class="dre-row">
+              <span class="text-muted">Ocupação (aluguel) %</span>
+              <span class="text-mono fw-bold" id="dre-ind-ocup">0%</span>
+            </div>
+            <div class="dre-row">
+              <span class="text-muted">Marketing %</span>
+              <span class="text-mono fw-bold" id="dre-ind-mkt">0%</span>
+            </div>
+            <div class="dre-row">
+              <span class="text-muted">Energia+Gás+Água %</span>
+              <span class="text-mono fw-bold" id="dre-ind-util">0%</span>
+            </div>
+            <div class="dre-row">
               <span class="text-muted">Ponto de Equilíbrio</span>
               <span class="text-mono fw-bold" id="dre-pe">R$ 0,00</span>
             </div>
@@ -7954,6 +7974,8 @@ const REF = {
   ocup:  { lo:true,  verde:7,  amarelo:7  },                 // aluguel/receita ≤7%
   mkt:   { banda:[3,5], teto:6 },                            // 3–5 ok / <3 ou 5–6 / >6
   util:  { lo:true,  verde:5,  amarelo:5  },                 // energia+gás+água ≤5%
+  // Margem líquida: sem faixa 12/10 — reusa a faixa que o app já usava na análise da DRE.
+  margemLiq: { lo:false, verde:10, amarelo:5 },              // ≥10 / 5–10 / <5
 };
 const PL_MENSAL = 3560; // pró-labore mensal (p/ MO%/prime sem pró-labore — etapa futura)
 
@@ -7970,6 +7992,9 @@ function cmvCor(p)    { return { verde:'var(--success)',      amarelo:'var(--amb
 function cmvCorTxt(p) { return { verde:'var(--success-text)', amarelo:'var(--warn-text)', vermelho:'var(--danger-text)' }[cmvStatus(p)]; }
 function cmvCorHex(p) { return { verde:'#2E7D32',             amarelo:'#C8832A',          vermelho:'#C62828' }[cmvStatus(p)]; }
 function cmvEmoji(p)  { return !p ? '' : { verde:'✅', amarelo:'⚠️', vermelho:'🔴' }[cmvStatus(p)]; }
+// Helpers de cor genéricos para qualquer indicador de REF (Nível 2).
+function faixaCor(p, k)    { return { verde:'var(--success)',      amarelo:'var(--amber)',     vermelho:'var(--danger)' }[faixaStatus(p, k)]; }
+function faixaCorTxt(p, k) { return { verde:'var(--success-text)', amarelo:'var(--warn-text)', vermelho:'var(--danger-text)' }[faixaStatus(p, k)]; }
 
 const DRE_CAT_MAP = {
   // Receita
@@ -11549,7 +11574,7 @@ function gerarDRE() {
      'dre-salarios','dre-aluguel','dre-energia','dre-marketing','dre-tecnologia',
      'dre-frete','dre-admin','dre-outros-op',
      'dre-ebitda','dre-res-fin','dre-impostos','dre-financ','dre-lucro-liq'].forEach(id => set(id, 'R$ 0,00'));
-    ['dre-ind-mg-bruta','dre-ind-mg-liq','dre-ind-cmv','dre-ind-fixos'].forEach(id => set(id, '0%'));
+    ['dre-ind-mg-bruta','dre-ind-mg-liq','dre-ind-cmv','dre-ind-fixos','dre-ind-mo','dre-ind-prime','dre-ind-ocup','dre-ind-mkt','dre-ind-util'].forEach(id => { set(id, '0%'); const el = _v(id); if (el) el.style.color = ''; });
     ['dre-pe','dre-fat-medio'].forEach(id => set(id, 'R$ 0,00'));
     const a = _v('dre-analise'); if (a) a.textContent = 'Selecione um período para obter análise.';
     return;
@@ -11731,6 +11756,24 @@ function gerarDRE() {
   set('dre-ind-cmv',      pct(d.cmv, d.recBruta));
   const fixos = d.aluguel + d.energia + d.admin + d.salarios;
   set('dre-ind-fixos',    pct(fixos, d.recBruta));
+  // Indicadores novos com faixa (Nível 2, decisão 12/10 via REF). Margem bruta e
+  // Custos Fixos % ficam sem cor (não há faixa decidida).
+  set('dre-ind-mo',    pct(d.salarios, d.recBruta));
+  set('dre-ind-prime', pct(d.cmv + d.salarios, d.recBruta));
+  set('dre-ind-ocup',  pct(d.aluguel, d.recBruta));
+  set('dre-ind-mkt',   pct(d.marketing, d.recBruta));
+  set('dre-ind-util',  pct(d.energia, d.recBruta));
+  if (d.recBruta > 0) {
+    const _rb = d.recBruta;
+    const _corInd = (id, val, k) => { const el = _v(id); if (el) el.style.color = faixaCorTxt(val, k); };
+    _corInd('dre-ind-cmv',    d.cmv / _rb * 100,               'cmv');
+    _corInd('dre-ind-mg-liq', d.lucroLiq / _rb * 100,          'margemLiq');
+    _corInd('dre-ind-mo',     d.salarios / _rb * 100,          'mo');
+    _corInd('dre-ind-prime',  (d.cmv + d.salarios) / _rb * 100, 'prime');
+    _corInd('dre-ind-ocup',   d.aluguel / _rb * 100,           'ocup');
+    _corInd('dre-ind-mkt',    d.marketing / _rb * 100,         'mkt');
+    _corInd('dre-ind-util',   d.energia / _rb * 100,           'util');
+  }
 
   // Ponto de equilíbrio
   const margemC = d.recBruta > 0 ? (d.recBruta - d.cmv) / d.recBruta : 0;
