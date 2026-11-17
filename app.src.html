@@ -22471,8 +22471,21 @@ const _CURVA_TTL_MS = 30000;
 let _curvaCache = { ts: 0, mapa: null, resumo: null };
 function _invalidarCurvaConsumo() { _curvaCache = { ts: 0, mapa: null, resumo: null }; }
 
+// v1.07.286 — o cache tambem morre quando o `state` inteiro e trocado (carga
+// do servidor, troca de estabelecimento, restauracao) ou quando o numero de
+// insumos/movimentacoes muda. Antes so o TTL protegia: uma curva calculada
+// com o state ainda vazio (todo insumo classe C) sobrevivia 30 s depois que
+// os dados chegavam — e uma contagem Ampla aberta nessa janela via as 10
+// areas sem item nenhum e fechava todas como "fora do escopo" (Artesano,
+// 17/11). A assinatura e barata (3 comparacoes) e nao custa nada por tecla.
+function _curvaAssinatura() {
+  return { ref: state, nIns: (state.insumos||[]).length, nMov: (state.movimentacoes||[]).length };
+}
 function _curvaConsumo() {
-  if (_curvaCache.mapa && (Date.now() - _curvaCache.ts) < _CURVA_TTL_MS) return _curvaCache;
+  const _sig = _curvaAssinatura();
+  const _sigOk = _curvaCache.sig && _curvaCache.sig.ref === _sig.ref
+    && _curvaCache.sig.nIns === _sig.nIns && _curvaCache.sig.nMov === _sig.nMov;
+  if (_curvaCache.mapa && _sigOk && (Date.now() - _curvaCache.ts) < _CURVA_TTL_MS) return _curvaCache;
   const naoCMV = (typeof _catsNaoCMVSet === 'function') ? _catsNaoCMVSet() : new Set();
   const limite = _dataLocalISO(_agora() - 90*24*60*60*1000);
   const comprasPorInsumo = {};
@@ -22522,7 +22535,7 @@ function _curvaConsumo() {
     },
     ordenados: linhas,
   };
-  _curvaCache = { ts: Date.now(), mapa, resumo };
+  _curvaCache = { ts: Date.now(), mapa, resumo, sig: _sig };
   return _curvaCache;
 }
 
@@ -22883,13 +22896,52 @@ function _estadoDaArea(sessao, areaIdx, rec) {
 // para a tela dizer "fora deste escopo" em vez de "concluida" — ninguem pode
 // ler o verde como "os 19 temperos foram contados". O flag tambem e o que
 // permite desfazer: "Contar tudo" traz os itens de volta e reabre a area.
+//
+// v1.07.286 — duas travas novas, achadas no Artesano em 17/11: as 10 areas
+// de uma contagem Ampla nasceram "fora do escopo", mas 9 delas tinham itens
+// (31 no Estoque, 23 no Freezer Delivery...). A lista estava vazia so no
+// instante da abertura (curva ABC calculada com o state ainda incompleto) e
+// a conclusao automatica era de mao unica.
+//
+//   1. Base nao confiavel -> nao fecha nada. Sem insumo carregado, ou com a
+//      curva sem nenhum valor (todo mundo classe C por falta de dado, nao por
+//      decisao), "lista vazia" nao significa "fora do escopo".
+//   2. _cntReabrirAreasAutoComItens desfaz a conclusao automatica de toda
+//      area que voltou a ter item visivel. So mexe em area com concluidaAuto:
+//      area concluida a mao nunca e tocada.
+//   Grupo vazio por cadastro (todos nao-CMV ou consumo direto) nao depende
+//   da curva: fecha sozinho desde que os insumos estejam carregados.
+function _cntBaseDoEscopoConfiavel() {
+  if (!(state.insumos||[]).length) return false;
+  if (!(state.gruposInsumos||[]).length) return false;
+  let r = null;
+  try { r = _curvaConsumo().resumo; } catch (e) { r = null; }
+  return !!(r && r.total > 0);
+}
+
 function _cntConcluirAreasSemItens(sessao, rec) {
+  if (!(state.insumos||[]).length) return 0;
+  const curvaOk = _cntBaseDoEscopoConfiavel();
   let mudou = 0;
   ((sessao && sessao.areas) || []).forEach((area, i) => {
     if (area.concluida) return;
-    if (_estadoDaArea(sessao, i, rec).nadaAContar) {
+    const st = _estadoDaArea(sessao, i, rec);
+    if (st.nadaAContar && st.grupo && (st.grupoVazio || curvaOk)) {
       area.concluida = true;
       area.concluidaAuto = true;
+      mudou++;
+    }
+  });
+  return mudou;
+}
+
+function _cntReabrirAreasAutoComItens(sessao, rec) {
+  let mudou = 0;
+  ((sessao && sessao.areas) || []).forEach((area, i) => {
+    if (!area.concluida || !area.concluidaAuto) return;
+    if (_estadoDaArea(sessao, i, rec).visiveis.length > 0) {
+      area.concluida = false;
+      delete area.concluidaAuto;
       mudou++;
     }
   });
@@ -23001,7 +23053,11 @@ function abrirContagem(recorrenteId) {
 
   // v1.07.276 — vale para sessao nova E para sessao que ja estava aberta antes
   // deste lote: e idempotente e so mexe em area que nao tem nada a contar.
-  if (_cntConcluirAreasSemItens(sessao, rec)) saveState();
+  // v1.07.286 — antes de fechar, reabre o que foi fechado sozinho e hoje tem
+  // item para contar (conserta tambem a sessao que ja nasceu travada).
+  const _reab = _cntReabrirAreasAutoComItens(sessao, rec);
+  const _fech = _cntConcluirAreasSemItens(sessao, rec);
+  if (_reab || _fech) saveState();
 
   // Muda para vista de execução
   document.getElementById('cnt-view-dashboard').style.display='none';
@@ -23099,6 +23155,9 @@ function _alterarDataContagem() {
     const aplicar = () => {
       sessao.data = nova;
       sessao.escopo = escopoNovo;
+      // v1.07.286 — escopo novo muda quais areas tem o que contar.
+      _cntReabrirAreasAutoComItens(sessao, rec);
+      _cntConcluirAreasSemItens(sessao, rec);
       saveState();
       renderExecucaoContagem(sessao, rec);
       toast('✅ Contagem passou a valer para ' + _fmtDataBR(nova) + '.');
