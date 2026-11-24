@@ -23074,51 +23074,63 @@ function _alterarDataContagem() {
 
   _pedirDataSimples('📅 Data da contagem física', sessao.data, function(nova) {
     if (!nova || nova === sessao.data) return;
-    const hoje = _dataLocalISO(_agora());
-    if (nova > hoje) { toast('⚠️ A contagem não pode ser de uma data futura.', 'danger'); return; }
-    if (rec && rec.ultimaContagem && nova <= rec.ultimaContagem) {
-      toast('⚠️ Já existe contagem aplicada em ' + _fmtDataBR(rec.ultimaContagem)
-          + '. A nova precisa ser depois disso.', 'danger');
-      return;
-    }
-
-    const escopoNovo = _escopoEfetivo(rec, nova).escopo;
-    const escopoAtual = _escopoDaSessao(sessao, rec);
-
-    // Quantos itens JA PREENCHIDOS sairiam da lista com o escopo novo?
-    let perdidos = 0;
-    if (escopoNovo !== escopoAtual) {
-      (sessao.areas||[]).forEach(area => {
-        const grupo = (state.gruposInsumos||[]).find(g => g.id === area.grupoId);
-        const visiveis = new Set(_insumosValidosParaContagem(grupo, rec, _cntMostrarTodos, escopoNovo)
-          .insumosGrupo.map(i => String(i.id)));
-        Object.keys(area.itens||{}).forEach(id => { if (!visiveis.has(String(id))) perdidos++; });
-      });
-    }
-
-    const aplicar = () => {
-      sessao.data = nova;
-      sessao.escopo = escopoNovo;
-      saveState();
+    _cntDefinirDataContagem(sessao, rec, nova, function() {
       renderExecucaoContagem(sessao, rec);
       toast('✅ Contagem passou a valer para ' + _fmtDataBR(nova) + '.');
-    };
-
-    if (escopoNovo !== escopoAtual) {
-      const nomeDe = (ESCOPOS_CONTAGEM[escopoAtual]||{}).nome || escopoAtual;
-      const nomePara = (ESCOPOS_CONTAGEM[escopoNovo]||{}).nome || escopoNovo;
-      customConfirm(
-        '<div style="font-size:0.85rem;line-height:1.6;">Nessa data o escopo da contagem passa de '
-        + '<strong>' + esc(nomeDe) + '</strong> para <strong>' + esc(nomePara) + '</strong>.'
-        + (perdidos ? '<br><br><strong style="color:var(--danger);">' + perdidos + ' item(ns) já preenchido(s)</strong>'
-            + ' sairiam da lista. O valor deles fica guardado, mas não será aplicado ao estoque.' : '')
-        + '</div>',
-        ok => { if (ok) aplicar(); },
-        '📅', 'Usar esta data', 'btn-primary');
-    } else {
-      aplicar();
-    }
+    });
   });
+}
+
+// v1.07.286 — troca de data da contagem extraida para ser reusada pelo lapis
+// (_alterarDataContagem) e pelo portao de data do aplicar (aplicarContagemFinal).
+// Valida (sem data futura; depois da ultima contagem aplicada), recalcula o
+// escopo, avisa quantos itens ja preenchidos sairiam da lista e so entao grava.
+// `onOk` roda apenas quando a data e de fato aplicada — nao quando o usuario
+// cancela a troca de escopo.
+function _cntDefinirDataContagem(sessao, rec, nova, onOk) {
+  const hoje = _dataLocalISO(_agora());
+  if (nova > hoje) { toast('⚠️ A contagem não pode ser de uma data futura.', 'danger'); return; }
+  if (rec && rec.ultimaContagem && nova <= rec.ultimaContagem) {
+    toast('⚠️ Já existe contagem aplicada em ' + _fmtDataBR(rec.ultimaContagem)
+        + '. A nova precisa ser depois disso.', 'danger');
+    return;
+  }
+
+  const escopoNovo = _escopoEfetivo(rec, nova).escopo;
+  const escopoAtual = _escopoDaSessao(sessao, rec);
+
+  // Quantos itens JA PREENCHIDOS sairiam da lista com o escopo novo?
+  let perdidos = 0;
+  if (escopoNovo !== escopoAtual) {
+    (sessao.areas||[]).forEach(area => {
+      const grupo = (state.gruposInsumos||[]).find(g => g.id === area.grupoId);
+      const visiveis = new Set(_insumosValidosParaContagem(grupo, rec, _cntMostrarTodos, escopoNovo)
+        .insumosGrupo.map(i => String(i.id)));
+      Object.keys(area.itens||{}).forEach(id => { if (!visiveis.has(String(id))) perdidos++; });
+    });
+  }
+
+  const aplicar = () => {
+    sessao.data = nova;
+    sessao.escopo = escopoNovo;
+    saveState();
+    if (onOk) onOk();
+  };
+
+  if (escopoNovo !== escopoAtual) {
+    const nomeDe = (ESCOPOS_CONTAGEM[escopoAtual]||{}).nome || escopoAtual;
+    const nomePara = (ESCOPOS_CONTAGEM[escopoNovo]||{}).nome || escopoNovo;
+    customConfirm(
+      '<div style="font-size:0.85rem;line-height:1.6;">Nessa data o escopo da contagem passa de '
+      + '<strong>' + esc(nomeDe) + '</strong> para <strong>' + esc(nomePara) + '</strong>.'
+      + (perdidos ? '<br><br><strong style="color:var(--danger);">' + perdidos + ' item(ns) já preenchido(s)</strong>'
+          + ' sairiam da lista. O valor deles fica guardado, mas não será aplicado ao estoque.' : '')
+      + '</div>',
+      ok => { if (ok) aplicar(); },
+      '📅', 'Usar esta data', 'btn-primary');
+  } else {
+    aplicar();
+  }
 }
 
 // Modal minimo de data — mesmo visual do modal de impressao, sem o formato.
@@ -24034,6 +24046,52 @@ function _analisarVariacoesContagem(sessao) {
   return alertas;
 }
 
+// v1.07.286 — portao de confirmacao de data, disparado por aplicarContagemFinal
+// so quando a sessao foi reaproveitada (carimbo anterior a hoje). Sugere "hoje"
+// em destaque — o caso comum e reabrir uma sessao antiga e contar hoje — mas sem
+// carimbar sozinho: "contei segunda, digito quarta" continua sendo escolha de
+// quem conta. `cont` roda quando a data esta confirmada e o aplicar deve seguir.
+function _cntConfirmarDataAplicacao(sessao, cont) {
+  const hoje = _dataLocalISO(_agora());
+  const rec = (state.contagensRecorrentes||[]).find(c => c.id === sessao.recorrenteId);
+  const modalEl = document.createElement('div');
+  modalEl.id = 'modal-data-aplicar';
+  modalEl.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10001;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modalEl.innerHTML =
+    '<div style="background:white;border-radius:14px;padding:24px;max-width:430px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.2);">'
+    + '<div style="font-size:1rem;font-weight:700;margin-bottom:8px;">📅 Confirme a data da contagem</div>'
+    + '<p style="font-size:0.82rem;color:var(--ink);line-height:1.6;margin:0 0 6px;">'
+    + 'Esta contagem está carimbada em <strong>' + _fmtDataBR(sessao.data) + '</strong> — o dia em que a tela foi aberta.</p>'
+    + '<p style="font-size:0.78rem;color:var(--muted);line-height:1.55;margin:0 0 16px;">'
+    + 'Em que dia você <strong>conferiu o estoque fisicamente</strong>? Compras recebidas depois dessa data não entram no estoque contado.</p>'
+    + '<div style="display:flex;flex-direction:column;gap:8px;">'
+    + '<button id="_cntdt-hoje" class="btn btn-primary" style="font-size:0.85rem;padding:11px;">✅ Foi hoje, ' + _fmtDataBR(hoje) + '</button>'
+    + '<button id="_cntdt-carimbo" class="btn btn-outline" style="font-size:0.82rem;padding:10px;">Foi em ' + _fmtDataBR(sessao.data) + ' (o carimbo)</button>'
+    + '<button id="_cntdt-outra" class="btn btn-outline" style="font-size:0.82rem;padding:10px;">Outra data…</button>'
+    + '</div>'
+    + '<div style="text-align:center;margin-top:12px;">'
+    + '<button id="_cntdt-cancelar" style="background:none;border:none;color:var(--muted);font-size:0.78rem;cursor:pointer;text-decoration:underline;">Cancelar</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modalEl);
+  const fechar = () => modalEl.remove();
+  modalEl.querySelector('#_cntdt-cancelar').onclick = fechar;
+  modalEl.onclick = e => { if (e.target===modalEl) fechar(); };
+  // Foi hoje → troca a data para hoje (com o mesmo tratamento de escopo do lapis) e segue
+  modalEl.querySelector('#_cntdt-hoje').onclick = () => { fechar(); _cntDefinirDataContagem(sessao, rec, hoje, cont); };
+  // Foi no carimbo → mantem a data como esta e segue
+  modalEl.querySelector('#_cntdt-carimbo').onclick = () => { fechar(); cont(); };
+  // Outra data → abre o seletor; se mudar, aplica com tratamento de escopo; se manter, segue
+  modalEl.querySelector('#_cntdt-outra').onclick = () => {
+    fechar();
+    _pedirDataSimples('📅 Data da contagem física', sessao.data, function(nova) {
+      if (!nova) return;
+      if (nova === sessao.data) { cont(); return; }
+      _cntDefinirDataContagem(sessao, rec, nova, cont);
+    });
+  };
+}
+
 function aplicarContagemFinal() {
   const sessao = (state.contagensAtivas||[]).find(s=>s.id===contagemAtivaId);
   if (!sessao) return;
@@ -24043,6 +24101,23 @@ function aplicarContagemFinal() {
   // o que fecha o furo sem trancar quem so abriu a tela e voltou.
   if (_trialLimiteAtingido('contagens', true)) { _mostrarBloqueioTrial('contagens'); return; }
 
+  // v1.07.286 — portao de data em sessao reaproveitada. `abrirContagem` carimba
+  // `data = hoje` na ABERTURA; quem abriu dia 20 e so veio aplicar dia 26 (sem
+  // corrigir no lapis) gravaria a contagem como de 20, e as compras recebidas
+  // entre 20 e 26 entrariam no estoque contado sem terem sido conferidas. Se o
+  // carimbo for anterior a hoje, confirma a data fisica antes de aplicar. Contou
+  // e aplicou no mesmo dia (data == hoje) passa direto, sem atrito.
+  if (sessao.data < _dataLocalISO(_agora())) {
+    _cntConfirmarDataAplicacao(sessao, () => _aplicarContagemFluxo(sessao));
+    return;
+  }
+  _aplicarContagemFluxo(sessao);
+}
+
+// v1.07.286 — corpo do aplicar (deteccao de duplicatas entre areas + confirmacao
+// final) separado para o portao de data poder reentrar aqui depois de confirmada
+// a data. Ver aplicarContagemFinal.
+function _aplicarContagemFluxo(sessao) {
   // Detecta insumos que aparecem em mais de uma área (grupo)
   const porInsumo = {};
   sessao.areas.forEach(area => {
