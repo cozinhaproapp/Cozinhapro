@@ -7160,7 +7160,7 @@ const _ADMIN_PRODUTO_EMAIL = 'rodrigo.mmneves@gmail.com';
 
 
 
-const SYSTEM_VERSION = '1.07.285';
+const SYSTEM_VERSION = '1.07.286';
 
 // v1.07.137: trava de domínio — o sistema recusa rodar fora do domínio oficial
 // ou de um preview do Vercel. Não é proteção contra alguém com conhecimento
@@ -9450,6 +9450,11 @@ const grupoLabels = {
 // versão certa do arquivo — sem isso não dá pra saber, olhando o site, se
 // uma correção específica já está no ar ou não.
 const CHANGELOG = [
+  { v:'1.07.286', data:'Nov/2026', items:[
+    'CONTAGEM — A DATA DEIXOU DE SER CARIMBADA SEM AVISO. A sessao de contagem nasce com a data da ABERTURA da tela; quem abria num dia e so aplicava dias depois (reaproveitando a sessao) gravava a contagem com a data errada, e as compras recebidas no meio entravam no estoque contado sem terem sido conferidas. Agora, ao aplicar uma sessao cujo carimbo e anterior a hoje, o sistema para e pergunta a data em que o estoque foi conferido de fato — com "Foi hoje" em destaque (o caso comum: reabriu sessao antiga e contou hoje), "Foi no carimbo" e "Outra data". Contagem contada e aplicada no mesmo dia passa direto, sem atrito.',
+    'CONTAGEM, DIGITACAO — os campos de quantidade passaram a aceitar virgula decimal (igual ao valor das compras): "1,5" e "1.5" valem o mesmo. Enter avanca para o proximo campo da area e, no ultimo, foca o botao "Concluir area"; o botao agora tambem aparece no rodape de cada area, para nao ter que rolar de volta ao topo depois de preencher.',
+    'CONTAGEM, SELO SUSPEITO — o aviso de valor fora do padrao passou a comparar so dentro do mesmo recorrente e, quando houver, do mesmo escopo. Antes juntava o historico de todos os recorrentes: Geral (R$ 7-10 mil) e Atendimento (R$ 2-3 mil) caiam na mesma media e os dois extremos viravam "suspeito" sem motivo; o mesmo valia para uma essencial vs uma completa do mesmo recorrente.',
+  ]},
   { v:'1.07.285', data:'Out/2026', items:[
     'DE QUEM E ESTE PAGAMENTO? O lote 284 trocou o portao da folha por custo POR PESSOA e passou a mostrar os pagamentos de salario sem dono com "diga de quem sao" — mas nao havia onde dizer. `chavesPagamento`, a chave que o casamento pagamento -> pessoa le primeiro, era lida e nunca gravada. No Artesano eram 14 de 88 pagamentos sem dono, e so QUATRO respostas: o PIX da Betania e da Sandra, os da Tainara e do Darby sao do Mateus, e o boleto TJPR de R$ 383,13 e o repasse judicial da Sandra. Sem elas o custo de mao de obra fica R$ 1.750 a R$ 3.400 mais alto por mes.',
     'Agora cada pagamento sem dono aparece na faixa do mes (Equipe -> Custo de Mao de Obra) com data, texto do extrato, valor e um botao "De quem e?". O modal tem duas saidas: "E de [pessoa]", que ensina a chave, e "Nao e salario", que reclassifica so aquele lancamento pela mesma edicao do Fluxo (marca editado a mao e ensina o motor de classificacao).',
