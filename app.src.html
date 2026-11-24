@@ -22269,7 +22269,19 @@ function renderContagem() {
       // Usa valorTotal do snapshot (custo na época) — não recalcula com custo atual
       const _valorSuspeito = (h, todasHist) => {
         if (!h.valorTotal || h.confirmado) return false;
-        const outros = todasHist.filter(x=>x.data!==h.data&&x.valorTotal>0&&!x.confirmado).map(x=>x.valorTotal);
+        // v1.07.286 — comparar só dentro do MESMO recorrente e, quando houver, do
+        // mesmo escopo. Antes `todasHist` era o histórico de todos os recorrentes
+        // misturados: Geral (R$7-10k) e Atendimento (R$2-3k) caíam na mesma média
+        // e os dois extremos viravam "suspeito" sem motivo. O mesmo valia para uma
+        // essencial (91 itens) vs uma completa (249) do mesmo recorrente. Se uma
+        // das contagens não tiver escopo (histórico antigo), cai só no recorrente.
+        const outros = todasHist.filter(x=>
+          x._recId===h._recId
+          && x.data!==h.data
+          && x.valorTotal>0
+          && !x.confirmado
+          && (!h.escopo || !x.escopo || x.escopo===h.escopo)
+        ).map(x=>x.valorTotal);
         if (outros.length < 1) return false; // sem base de comparação
         const media = outros.reduce((s,v)=>s+v,0)/outros.length;
         return h.valorTotal > media*1.5 || h.valorTotal < media*0.5;
