@@ -23371,8 +23371,9 @@ function renderExecucaoContagem(sessao, rec) {
                               const mostrarConversao = preenchido && varSelecionada;
                               return `<div style="display:flex;flex-direction:column;gap:5px;">
                                 <div style="display:flex;gap:4px;align-items:center;">
-                                  <input type="number" value="${valDigitado}" min="0" step="0.001" id="cnt-input-${areaIdx}-${ins.id}"
+                                  <input type="text" inputmode="decimal" value="${valDigitado}" id="cnt-input-${areaIdx}-${ins.id}"
                                     onchange="atualizarItemContagem('${sessao.id}',${areaIdx},'${ins.id}',this.value,'${(varSelecionada||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"
+                                    onkeydown="_cntEnterNav(event,${areaIdx})"
                                     ${bloqueado?'disabled':''}
                                     style="width:80px;padding:5px 8px;border:1px solid ${preenchido?'var(--amber)':'var(--border)'};
                                       border-radius:6px;font-family:'DM Mono',monospace;font-size:0.82rem;text-align:right;
@@ -23386,8 +23387,9 @@ function renderExecucaoContagem(sessao, rec) {
                               </div>`;
                             })()
                           : `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
-                              <input type="number" value="${val}" min="0" step="0.001" id="cnt-input-${areaIdx}-${ins.id}"
+                              <input type="text" inputmode="decimal" value="${val}" id="cnt-input-${areaIdx}-${ins.id}"
                                 onchange="atualizarItemContagem('${sessao.id}',${areaIdx},'${ins.id}',this.value,'')"
+                                onkeydown="_cntEnterNav(event,${areaIdx})"
                                 style="width:80px;padding:5px 8px;border:1px solid ${preenchido?'var(--amber)':'var(--border)'};
                                   border-radius:6px;font-family:'DM Mono',monospace;font-size:0.82rem;text-align:right;
                                 background:${preenchido?'#FFF8F0':'white'};"
@@ -23400,6 +23402,10 @@ function renderExecucaoContagem(sessao, rec) {
                 </tbody>
               </table>
             </div>`}
+        ${(!area.concluida && insumosGrupo.length) ? `
+        <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+          <button id="cnt-concluir-btn-${areaIdx}" onclick="concluirArea(${areaIdx})" class="btn btn-primary" style="font-size:0.85rem;">✅ Concluir área</button>
+        </div>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -23439,7 +23445,9 @@ function atualizarItemContagem(sessaoId, areaIdx, insumoId, val, varianteSel) {
   if (!sessao) return;
   if (!sessao.areas[areaIdx].itens) sessao.areas[areaIdx].itens={};
 
-  let qtd = parseFloat(val)||0;
+  // v1.07.286 — aceita vírgula decimal (o input agora é type=text inputmode=decimal,
+  // igual ao valor das compras). "1,5" e "1.5" valem o mesmo.
+  let qtd = parseFloat(String(val).replace(',', '.'))||0;
 
   // Se variante selecionada, converter para unidade principal
   if (varianteSel && varianteSel !== '') {
@@ -23575,6 +23583,28 @@ function reabrirArea(areaIdx) {
   document.getElementById('cnt-resultado').style.display='none';
   saveState();
   renderExecucaoContagem(sessao, rec);
+}
+
+// v1.07.286 — Enter avança para o próximo campo de quantidade da mesma área; no
+// último, foca o botão "Concluir área" do rodapé (digitação sem mouse/scroll).
+function _cntEnterNav(e, areaIdx) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const body = document.getElementById('cnt-area-body-' + areaIdx);
+  if (!body) return;
+  const inputs = Array.prototype.slice.call(
+    body.querySelectorAll('input[id^="cnt-input-' + areaIdx + '-"]')
+  ).filter(function(el){ return !el.disabled; });
+  const i = inputs.indexOf(e.target);
+  if (i > -1 && i < inputs.length - 1) {
+    const next = inputs[i + 1];
+    next.focus();
+    if (next.select) next.select();
+  } else {
+    e.target.blur(); // garante o commit (onchange) do último campo
+    const btn = document.getElementById('cnt-concluir-btn-' + areaIdx);
+    if (btn) { btn.focus(); btn.scrollIntoView({ behavior:'smooth', block:'center' }); }
+  }
 }
 
 function scrollToArea(id) {
