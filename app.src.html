@@ -13946,8 +13946,16 @@ function renderCustos() {
   // 22-23% reais. No modo "intervalo de contagem" o cálculo antigo é mantido,
   // porque _cmvUnificado trabalha por mês ou por todo o período.
   const _cmvU   = (mesSel === 'contagem') ? null : _cmvUnificado(mesSel);
-  const cmvExib = (_cmvU && _cmvU.valor > 0) ? _cmvU.valor : cmvVal;
-  const cmvPct  = (_cmvU && _cmvU.pct != null) ? _cmvU.pct : (entradas > 0 ? cmvVal / entradas * 100 : 0);
+  // B1 — fora de "duas contagens completas", o CMV de todos os insumos fica
+  // distorcido (B/C não foram contados na semana); mostra então só a classe A,
+  // com a faixa 28/35 neutralizada (15% de classe A não se compara ao alvo do
+  // CMV cheio). Entre duas completas, mostra o CMV completo normalmente.
+  const _cmvEhCompleto = !!(_cmvU && _cmvU.periodoCompleto);
+  const _cmvParcialA   = !!(_cmvU && _cmvU.origem === 'estoque' && !_cmvEhCompleto);
+  const _cmvValStock   = _cmvU ? (_cmvEhCompleto ? _cmvU.valor : (_cmvU.valorA || 0)) : 0;
+  const _cmvPctStock   = _cmvU ? (_cmvEhCompleto ? _cmvU.pct : _cmvU.pctA) : null;
+  const cmvExib = (_cmvU && _cmvValStock > 0) ? _cmvValStock : cmvVal;
+  const cmvPct  = (_cmvU && _cmvPctStock != null) ? _cmvPctStock : (entradas > 0 ? cmvVal / entradas * 100 : 0);
 
   // ── Faturamento PDV do período selecionado ──
   let fatPDV = 0, pedidosPDV = 0, ticketPDV = 0;
@@ -13972,14 +13980,23 @@ function renderCustos() {
     // v1.07.205 — a tela passa a dizer o periodo coberto e o motivo da
     // estimativa, igual ao card do Dashboard. Era justamente aqui que se vem
     // olhar quando o numero surpreende.
-    const base = (_cmvU && _cmvU.origem === 'estoque')
-      ? 'CMV (consumo real de estoque)' : 'CMV (compras do período)';
     const p = _cmvU && _cmvU.periodo;
     const dm = d => d ? d.slice(8,10) + '/' + d.slice(5,7) : '';
-    cmvLblEl.innerHTML = p
-      ? base + '<br><span style="opacity:.7;font-weight:400;">' + dm(p.de) + '\u2013' + dm(p.ate)
-        + ' \u00b7 ' + p.dias + (p.dias === 1 ? ' dia' : ' dias')
-        + (_cmvU.aviso ? ' \u00b7 ' + _cmvU.aviso : '') + '</span>'
+    const _per = p ? dm(p.de) + '\u2013' + dm(p.ate) + ' \u00b7 ' + p.dias + (p.dias === 1 ? ' dia' : ' dias') : '';
+    let base, sub;
+    if (_cmvParcialA) {
+      // B1 — semana sem as duas contagens completas: so a classe A, rotulada como parcial
+      const xpct = (_cmvU.comprasClasseAPct != null) ? Math.round(_cmvU.comprasClasseAPct * 100) : null;
+      base = 'CMV semanal (classe A' + (xpct != null ? ', ' + xpct + '% das compras' : '') + ')';
+      sub  = (_per ? _per + ' \u00b7 ' : '') + 'parcial \u2014 n\u00e3o substitui o CMV';
+    } else {
+      base = (_cmvU && _cmvU.origem === 'estoque')
+        ? (_cmvEhCompleto ? 'CMV completo (fechamento do m\u00eas)' : 'CMV (consumo real de estoque)')
+        : 'CMV (compras do per\u00edodo)';
+      sub  = _per + ((_cmvU && _cmvU.aviso) ? (_per ? ' \u00b7 ' : '') + _cmvU.aviso : '');
+    }
+    cmvLblEl.innerHTML = sub
+      ? base + '<br><span style="opacity:.7;font-weight:400;">' + sub + '</span>'
       : base;
   }
   if (fixEl)  setKpiMoeda(fixEl, fixosVal);
@@ -14037,16 +14054,20 @@ function renderCustos() {
   // ── CMV circle ──
   const circum = 314;
   const offset = circum - (Math.min(cmvPct,100)/100*circum);
+  // B1 - na visao parcial (classe A) a faixa 28/35 nao se aplica; cor neutra.
+  const _corCMV = _cmvParcialA ? '#8A8378' : (cmvPct<28?'#2E7D32':cmvPct<=35?'#C8832A':'#C62828');
   const circle = document.getElementById('cmv-circle');
   if (circle) {
     circle.style.strokeDashoffset = Math.max(0, offset);
-    circle.style.stroke = cmvPct<28?'#2E7D32':cmvPct<=35?'#C8832A':'#C62828';
+    circle.style.stroke = _corCMV;
   }
   const dispEl = document.getElementById('cmv-percent-display');
-  if (dispEl) { dispEl.textContent = cmvPct.toFixed(1)+'%'; dispEl.style.color = cmvPct<28?'#2E7D32':cmvPct<=35?'#C8832A':'#C62828'; }
+  if (dispEl) { dispEl.textContent = cmvPct.toFixed(1)+'%'; dispEl.style.color = _corCMV; }
   const statusEl = document.getElementById('cmv-status');
   if (statusEl && entradas>0) {
-    if      (cmvPct<28)  { statusEl.textContent='✅ Excelente'; statusEl.className='kpi-badge badge-ok'; }
+    statusEl.style.cssText = '';
+    if      (_cmvParcialA) { statusEl.textContent='classe A (parcial)'; statusEl.className='kpi-badge'; statusEl.style.cssText='background:#EDE8DF;color:#6B6459;'; }
+    else if (cmvPct<28)  { statusEl.textContent='✅ Excelente'; statusEl.className='kpi-badge badge-ok'; }
     else if (cmvPct<=35) { statusEl.textContent='⚠️ Aceitável'; statusEl.className='kpi-badge badge-warn'; }
     else                  { statusEl.textContent='🔴 Alto';      statusEl.className='kpi-badge badge-danger'; }
   }
@@ -14059,7 +14080,7 @@ function renderCustos() {
   // Real: cmvVal / entradas (lançamentos do período)
   const compCard = document.getElementById('cmv-comparativo-card');
   const fichasComPrecoCmv = state.fichas.filter(f => f.tipo==='prato-final' && f.precoVenda > 0 && f.custoUnitario > 0);
-  if (compCard && fichasComPrecoCmv.length && entradas > 0) {
+  if (compCard && fichasComPrecoCmv.length && entradas > 0 && !_cmvParcialA) {
     // Média ponderada pelo preço de venda (proxy de participação no faturamento)
     let somaPesos = 0, somaCmvPonderado = 0;
     fichasComPrecoCmv.forEach(f => {
@@ -14452,7 +14473,20 @@ function _cmvUnificado(filtroMes) {
     if (compras > 0) foraDoRecorte = { valor: compras, de: rec.ate, ate: rec.fimMes };
   }
 
+  // B1 — "duas contagens completas": cada ponta é completa se algum snapshot da
+  // âncora mesclada tiver escopo 'completa' (snapshot antigo sem escopo já cai em
+  // 'completa' por _escopoDoSnapshot — o fallback de legado). Fora disso o CMV de
+  // todos os insumos fica distorcido (B/C não foram contados), então a tela mostra
+  // só a classe A.
+  const _ancoraCompleta = anc => !!(anc && (anc.snaps||[]).some(h => _escopoDoSnapshot(h) === 'completa'));
+  const periodoCompleto = !!(detalhe && detalhe.snaps
+    && _ancoraCompleta(detalhe.snaps.inicial) && _ancoraCompleta(detalhe.snaps.final));
+  const valorA = (detalhe && detalhe.totalA) || 0;
+
   return { valor: valor, base: base, pct: base > 0 ? (valor / base * 100) : null,
+           valorA: valorA, pctA: (base > 0 && detalhe && detalhe.totalA != null) ? (valorA / base * 100) : null,
+           comprasClasseAPct: detalhe ? detalhe.comprasClasseAPct : null,
+           periodoCompleto: periodoCompleto,
            origem: origem, status: status, aviso: aviso, detalhe: detalhe,
            medido: medido, cobertura: detalhe ? {
              inicial: _coberturaSnapshot((detalhe.snaps && detalhe.snaps.inicial) || null),
@@ -14539,6 +14573,11 @@ function _calcCMVReal(filtroMes) {
   const porCategoria = [];
   let totalGeral = 0;
   let statusGeral = 'real';
+  // B1 — acumuladores paralelos da classe A, para o "CMV semanal (classe A)".
+  // Não mudam o cálculo existente; só medem, no mesmo laço, a parcela que vem
+  // dos insumos classe A (os únicos contados toda semana) e a fração de compras
+  // que eles representam.
+  let totalGeralA = 0, comprasTotal = 0, comprasA = 0;
 
   Array.from(catsCMV).sort().forEach(catId => {
     const catObj = (state.catEstoque||[]).find(c => c.id === catId);
@@ -14555,12 +14594,16 @@ function _calcCMVReal(filtroMes) {
 
     insumosCat.forEach(ins => {
       const insId = String(ins.id);
+      const _classeA = _classeInsumo(insId) === 'A';   // B1
       const movsIns = _movsEntradaPorInsumo.get(insId) || [];
       const totalComprasIns = movsIns.reduce((s,m) => s + (m.valorTotal||0), 0);
+      comprasTotal += totalComprasIns;                 // B1
+      if (_classeA) comprasA += totalComprasIns;       // B1
 
       if (ins.consumoDireto) {
         // Uso direto: CMV = compras do período
         cmvDireto += totalComprasIns;
+        if (_classeA) totalGeralA += totalComprasIns;  // B1
         return;
       }
 
@@ -14571,25 +14614,28 @@ function _calcCMVReal(filtroMes) {
       const vIni = valorInsumoAncora(ancIni, insId);
       const vFim = valorInsumoAncora(ancFim, insId);
 
+      let _contrib = 0;                                // B1 — a parcela deste insumo
       if (vIni && vFim) {
         // Real: tem contagem inicial e final
         const comprasEntreContagens = (_entradasTodasPorInsumo.get(insId) || [])
           .filter(m => m.data >= vIni.data && m.data <= vFim.data)
           .reduce((s,m) => s + (m.valorTotal||0), 0);
-        cmvContagem += Math.max(0, vIni.valor + comprasEntreContagens - vFim.valor);
+        _contrib = Math.max(0, vIni.valor + comprasEntreContagens - vFim.valor);
       } else if (vIni && !vFim) {
         // Parcial: tem so contagem inicial
         const valAtual = (ins.atual||0) * (ins.custo||0);
         const comprasDesdeInicial = (_entradasTodasPorInsumo.get(insId) || [])
           .filter(m => m.data >= vIni.data && (!periodoFim || m.data <= periodoFim))
           .reduce((s,m) => s + (m.valorTotal||0), 0);
-        cmvContagem += Math.max(0, vIni.valor + comprasDesdeInicial - valAtual);
+        _contrib = Math.max(0, vIni.valor + comprasDesdeInicial - valAtual);
         statusCat = statusCat === 'estimado' ? 'estimado' : 'parcial';
       } else {
         // Estimado: sem contagens
-        cmvContagem += totalComprasIns;
+        _contrib = totalComprasIns;
         statusCat = 'estimado';
       }
+      cmvContagem += _contrib;                         // B1 (antes era incremento direto em cada ramo)
+      if (_classeA) totalGeralA += _contrib;           // B1
     });
 
     const totalCat = cmvDireto + cmvContagem;
@@ -14611,6 +14657,8 @@ function _calcCMVReal(filtroMes) {
 
   return {
     total: totalGeral,
+    totalA: totalGeralA,                               // B1 — CMV só dos insumos classe A
+    comprasClasseAPct: comprasTotal > 0 ? (comprasA / comprasTotal) : null, // B1
     porCategoria: porCategoria.sort((a,b) => b.valor - a.valor),
     status: statusGeral,
     // v1.07.228 — a data que rotula cada ponta e a MAIOR da janela mesclada.
