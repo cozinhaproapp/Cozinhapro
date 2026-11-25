@@ -1,1 +1,9 @@
 .vercel
+
+# Dependências do build (instaladas com npm install em build/)
+build/node_modules/
+
+# Saídas do build de ofuscação — geradas localmente antes do deploy, não versionadas
+# (o repo versiona só as fontes app.src.html / login.src.html)
+/app.html
+/login.html
